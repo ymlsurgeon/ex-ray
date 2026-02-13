@@ -309,10 +309,55 @@ jobs:
         findings = plugin.scan(tmp_path)
         assert any(f.rule_id == "GHA-005" for f in findings)
 
+    def test_scan_runner_registration(self, plugin, tmp_path):
+        """Test GHA-006: Self-hosted runner registration."""
+        workflows_dir = tmp_path / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+
+        workflow = workflows_dir / "runner-setup.yml"
+        workflow.write_text("""
+name: Setup Runner
+on: workflow_dispatch
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          curl -o actions-runner-linux.tar.gz https://github.com/actions/runner/releases/download/v2.299.1/actions-runner-linux-x64-2.299.1.tar.gz
+          tar xzf actions-runner-linux.tar.gz
+          ./config.sh --url https://github.com/org/repo --token ${{ secrets.RUNNER_TOKEN }}
+          ./run.sh
+""")
+
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "GHA-006" for f in findings)
+        assert any(f.severity == Severity.CRITICAL for f in findings)
+
+    def test_scan_runner_service_installation(self, plugin, tmp_path):
+        """Test GHA-007: Runner service installation."""
+        workflows_dir = tmp_path / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+
+        workflow = workflows_dir / "runner-persist.yml"
+        workflow.write_text("""
+name: Persistent Runner
+on:
+  schedule:
+    - cron: '0 0 * * *'
+jobs:
+  persist:
+    runs-on: ubuntu-latest
+    steps:
+      - run: ./svc.sh install
+""")
+
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "GHA-007" for f in findings)
+
     def test_all_rules_can_fire(self, plugin):
         """Test that all defined rules are valid and can trigger."""
-        # Verify we have at least 5 rules (GHA-001 through GHA-005)
-        assert len(plugin.rules) >= 5
+        # Verify we have at least 7 rules (GHA-001 through GHA-007)
+        assert len(plugin.rules) >= 7
 
         # Verify all rules have required fields
         for rule in plugin.rules:
