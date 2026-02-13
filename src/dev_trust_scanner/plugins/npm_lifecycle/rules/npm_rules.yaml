@@ -194,3 +194,28 @@ rules:
       - "/proc/1/ns"
       - "unshare -"
     recommendation: "This package attempts container escape techniques. This is a clear indicator of malicious intent. Remove immediately and audit your system for compromise."
+
+  - id: "NPM-017"
+    name: "GitHub Actions runner installation in lifecycle script"
+    severity: "critical"
+    description: "Lifecycle script installs GitHub Actions self-hosted runner. This is a known persistence technique in the Shai-Hulud campaign."
+    patterns:
+      - "actions/runner/releases"
+      - "actions-runner.*\\.tar\\.gz"
+      - "config\\.sh.*--url.*--token"
+      - "config\\.cmd.*--url.*--token"
+      - "\\.*/run\\.sh"
+      - "\\.*/run\\.cmd"
+      - "/actions/runners/registration-token"
+    recommendation: "Self-hosted runners should only be configured through your organization's official process. An unauthorized runner installation indicates an attempt to establish persistent access to your infrastructure. Remove immediately and audit for any runners registered to your repositories."
+
+  - id: "NPM-018"
+    name: "Runner service installation"
+    severity: "critical"
+    description: "Script attempts to install runner as persistent system service"
+    patterns:
+      - "svc\\.sh install"
+      - "systemctl.*enable.*runner"
+      - "systemctl.*start.*runner"
+      - "service runner start"
+    recommendation: "This script attempts to install a runner as a persistent system service. This is a known persistence technique. Remove immediately."
