@@ -581,3 +581,76 @@ class TestShaHuludPatterns:
         shai_hulud_findings = [f for f in findings if "Shai-Hulud" in f.matched_content]
         # This is a design decision - keyword matching will catch this
         # Document this as expected behavior
+
+
+class TestDockerEscalation:
+    """Test Docker privilege escalation detection."""
+
+    def test_docker_socket_access(self, tmp_path):
+        """Test NPM-014: Docker socket access."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "docker-abuser",
+            "scripts": {
+                "postinstall": "docker run -v /var/run/docker.sock:/var/run/docker.sock alpine sh"
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-014" for f in findings)
+        from dev_trust_scanner.core.models import Severity
+        assert any(f.severity == Severity.HIGH for f in findings)
+
+    def test_privileged_container(self, tmp_path):
+        """Test NPM-015: Privileged container."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "privilege-escalator",
+            "scripts": {
+                "install": "docker run --privileged --cap-add=ALL alpine sh"
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-015" for f in findings)
+
+    def test_container_escape_nsenter(self, tmp_path):
+        """Test NPM-016: Container escape with nsenter."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "escape-artist",
+            "scripts": {
+                "postinstall": "nsenter --target 1 --mount --uts --ipc --net --pid -- bash"
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-016" for f in findings)
+        from dev_trust_scanner.core.models import Severity
+        assert any(f.severity == Severity.CRITICAL for f in findings)
+
+    def test_legitimate_docker_tool_false_positive(self, tmp_path):
+        """Test calibration against Docker ecosystem packages."""
+        plugin = NpmLifecyclePlugin()
+        
+        # This is a known tradeoff - some Docker tooling may trigger
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "docker-compose-wrapper",
+            "description": "Wrapper for docker-compose",
+            "scripts": {
+                "test": "docker-compose up"
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        # Document: Docker tooling packages may have false positives
+        # This is acceptable given the high severity of Docker abuse
+        docker_findings = [f for f in findings if "NPM-014" in f.rule_id or "NPM-015" in f.rule_id]
+        # Log false positive rate for documentation

@@ -162,3 +162,35 @@ rules:
       - "git remote add.*-migration"
       - "git init.*Shai-Hulud"
     recommendation: "This code creates GitHub repositories with patterns associated with malware campaigns. Review carefully and remove if unauthorized."
+
+  - id: "NPM-014"
+    name: "Docker socket access attempt"
+    severity: "high"
+    description: "Script attempts to access Docker daemon socket. No legitimate npm package should access Docker during installation."
+    patterns:
+      - "/var/run/docker\\.sock"
+      - "-v.*docker\\.sock"
+      - "--volume.*docker\\.sock"
+    recommendation: "This package attempts to access the Docker daemon socket. Legitimate npm packages do not require Docker access during installation. Review the script and remove the package if you did not explicitly expect Docker interaction."
+
+  - id: "NPM-015"
+    name: "Privileged container capabilities"
+    severity: "high"
+    description: "Script requests elevated container privileges (--privileged, --cap-add)"
+    patterns:
+      - "--privileged"
+      - "--cap-add=ALL"
+      - "--cap-add=SYS_ADMIN"
+      - "--security-opt apparmor=unconfined"
+    recommendation: "This package attempts to run containers with elevated privileges. This can lead to container escape and host compromise. Remove immediately unless you specifically expect this package to manage Docker containers."
+
+  - id: "NPM-016"
+    name: "Container escape techniques"
+    severity: "critical"
+    description: "Script uses known container escape techniques (nsenter, chroot)"
+    patterns:
+      - "\\bnsenter\\b"
+      - "chroot /host"
+      - "/proc/1/ns"
+      - "unshare -"
+    recommendation: "This package attempts container escape techniques. This is a clear indicator of malicious intent. Remove immediately and audit your system for compromise."
