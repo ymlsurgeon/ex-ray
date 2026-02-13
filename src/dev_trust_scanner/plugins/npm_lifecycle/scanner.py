@@ -260,6 +260,11 @@ class NpmLifecyclePlugin(BasePlugin):
         if not scripts or not isinstance(scripts, dict):
             return []
 
+        # Check for preinstall presence
+        has_preinstall = "preinstall" in scripts
+        has_suspicious_preinstall = False
+        preinstall_findings_indices = []
+
         # Analyze each script
         for script_name, script_content in scripts.items():
             if not isinstance(script_content, str):
@@ -286,6 +291,13 @@ class NpmLifecyclePlugin(BasePlugin):
                     finding.description = (
                         f"[Lifecycle script: {script_name}] {finding.description}"
                     )
+
+            # Track if this is preinstall with suspicious content
+            if script_name == "preinstall" and script_findings:
+                has_suspicious_preinstall = True
+                preinstall_findings_indices.extend(
+                    range(len(findings), len(findings) + len(script_findings))
+                )
 
             findings.extend(script_findings)
 
@@ -353,6 +365,38 @@ class NpmLifecyclePlugin(BasePlugin):
                             plugin_name=self.get_metadata()["name"],
                         )
                     )
+
+        # Escalate severity for preinstall scripts with suspicious content
+        for idx in preinstall_findings_indices:
+            if idx < len(findings):
+                finding = findings[idx]
+                # Escalate severity by one level
+                if finding.severity == Severity.HIGH:
+                    finding.severity = Severity.CRITICAL
+                    finding.description = f"[PREINSTALL ESCALATION] {finding.description} (Found in preinstall script, which executes earlier and has wider impact)"
+                elif finding.severity == Severity.MEDIUM:
+                    finding.severity = Severity.HIGH
+                    finding.description = f"[PREINSTALL ESCALATION] {finding.description} (Found in preinstall script)"
+
+        # Add informational finding if preinstall exists with suspicious content
+        if has_suspicious_preinstall:
+            try:
+                relative_path = pkg_path.relative_to(root)
+            except ValueError:
+                relative_path = pkg_path
+
+            findings.append(
+                Finding(
+                    rule_id="NPM-019",
+                    rule_name="Preinstall script with suspicious patterns",
+                    severity=Severity.MEDIUM,
+                    file_path=relative_path,
+                    matched_content=f"preinstall: {scripts['preinstall'][:100]}...",
+                    description="This package uses a preinstall script combined with suspicious patterns. Preinstall scripts execute before dependencies are installed and are less commonly used by legitimate packages.",
+                    recommendation="Review the preinstall script contents carefully. Consider whether this package genuinely needs to run code before dependency installation.",
+                    plugin_name=self.get_metadata()["name"],
+                )
+            )
 
         return findings
 

