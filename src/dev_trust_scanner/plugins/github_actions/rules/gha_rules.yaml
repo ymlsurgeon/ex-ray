@@ -1,2 +1,52 @@
-rules: []
-# Rules will be added in subsequent steps
+rules:
+  - id: "GHA-001"
+    name: "Known malicious workflow filename"
+    severity: "critical"
+    description: "Detected workflow file with filename associated with known malware campaigns (Shai-Hulud)"
+    keywords:
+      - "shai-hulud-workflow"
+      - "shai_hulud_workflow"
+      - "sha1-hulud"
+    recommendation: "This workflow file is associated with the Shai-Hulud supply chain worm. Remove immediately and audit your repository's Actions history for unauthorized runs."
+
+  - id: "GHA-002"
+    name: "Suspicious workflow triggers (persistence pattern)"
+    severity: "high"
+    description: "Workflow uses both workflow_dispatch and schedule triggers, which can be used for persistence"
+    patterns:
+      - "workflow_dispatch.*\\n.*schedule"
+      - "schedule.*\\n.*workflow_dispatch"
+    recommendation: "Review this workflow carefully. Combining workflow_dispatch with schedule is sometimes legitimate (nightly builds) but is also used for persistence in attacks."
+
+  - id: "GHA-003"
+    name: "External script download and execution in workflow"
+    severity: "high"
+    description: "Workflow downloads and executes external scripts (curl | bash pattern)"
+    patterns:
+      - "curl.*\\|.*bash"
+      - "curl.*\\|.*sh"
+      - "wget.*\\|.*bash"
+      - "wget.*\\|.*sh"
+      - "curl.*-o.*&&.*bash"
+      - "wget.*-O.*&&.*sh"
+    recommendation: "Workflows should not download and execute external scripts. This pattern is commonly used in supply chain attacks. Review the script source and replace with a trusted GitHub Action if possible."
+
+  - id: "GHA-004"
+    name: "Environment variable dumping in workflow"
+    severity: "high"
+    description: "Workflow dumps environment variables (potential secret exfiltration)"
+    patterns:
+      - "\\benv\\b"
+      - "\\bprintenv\\b"
+      - "\\$GITHUB_TOKEN"
+      - "secrets\\."
+    recommendation: "This workflow accesses environment variables or secrets. Verify that secrets are not being exfiltrated or logged. Ensure proper secret handling practices."
+
+  - id: "GHA-005"
+    name: "Self-hosted runner without clear organizational context"
+    severity: "medium"
+    description: "Workflow uses self-hosted runners (runs-on: self-hosted)"
+    keywords:
+      - "runs-on: self-hosted"
+      - "runs-on: [self-hosted"
+    recommendation: "Self-hosted runners should only be used through your organization's official process. Verify this runner is authorized and properly configured."
