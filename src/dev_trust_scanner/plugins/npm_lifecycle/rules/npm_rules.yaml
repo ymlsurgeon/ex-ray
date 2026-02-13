@@ -88,3 +88,28 @@ rules:
       - "String\\.fromCharCode"
       - "\\\\[0-7]{3}"
     recommendation: "Deobfuscate and inspect the code. Legitimate packages rarely use obfuscation."
+
+  - id: "NPM-008"
+    name: "TruffleHog binary download in lifecycle script"
+    severity: "critical"
+    description: "Script downloads TruffleHog secret scanner binary. This is a signature behavior of the Shai-Hulud npm worm campaign used for credential theft."
+    patterns:
+      - "trufflesecurity/trufflehog.*releases"
+      - "trufflehog.*releases.*download"
+      - "github\\.com.*trufflehog.*releases"
+      - "trufflehog_linux"
+      - "trufflehog\\.exe"
+      - "trufflehog.*-o\\s+"
+      - "wget.*trufflehog"
+    recommendation: "This package downloads and executes TruffleHog, a secret-scanning tool. Legitimate packages do not scan your filesystem for credentials during installation. Remove this package immediately and rotate any exposed secrets."
+
+  - id: "NPM-009"
+    name: "TruffleHog execution in lifecycle script"
+    severity: "critical"
+    description: "Script executes TruffleHog binary to scan for secrets"
+    patterns:
+      - "\\.*/trufflehog\\s+filesystem"
+      - "\\.*/trufflehog\\s+git"
+      - "trufflehog.*--json"
+      - "chmod\\s+\\+x\\s+trufflehog"
+    recommendation: "This package executes TruffleHog to scan for secrets. This is credential theft malware. Remove immediately and audit your GitHub tokens, AWS keys, and other credentials."

