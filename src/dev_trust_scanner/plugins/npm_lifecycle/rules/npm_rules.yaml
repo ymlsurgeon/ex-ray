@@ -137,3 +137,28 @@ rules:
       - "cmVxdWVzdGJpbi5jb20"
       - "cGlwZWRyZWFtLmNvbQ"
     recommendation: "This package contains obfuscated references to webhook collection services. This indicates deliberate attempt to hide exfiltration. Remove immediately."
+
+  - id: "NPM-012"
+    name: "Shai-Hulud campaign markers"
+    severity: "critical"
+    description: "Code contains known Shai-Hulud malware campaign marker strings. These are definitive indicators of compromise."
+    keywords:
+      - "Shai-Hulud"
+      - "Sha1-Hulud"
+      - "Shai-Hulud: The Second Coming"
+      - "Goldox-T3chs"
+      - "Goldox-T3chs: Only Happy Girl"
+      - "_sha1_hulud_"
+      - "_goldox_"
+    recommendation: "This package contains code that creates GitHub repositories with known malware campaign markers. This is a definitive indicator of the Shai-Hulud supply chain worm. Remove this package immediately, audit your GitHub account for unauthorized repositories, and revoke any GitHub tokens that may have been exposed."
+
+  - id: "NPM-013"
+    name: "Repository creation with suspicious markers"
+    severity: "high"
+    description: "Code creates GitHub repositories combined with campaign markers or suspicious patterns"
+    patterns:
+      - "api\\.github\\.com/user/repos.*Shai-Hulud"
+      - "api\\.github\\.com/user/repos.*Goldox"
+      - "git remote add.*-migration"
+      - "git init.*Shai-Hulud"
+    recommendation: "This code creates GitHub repositories with patterns associated with malware campaigns. Review carefully and remove if unauthorized."
