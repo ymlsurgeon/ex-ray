@@ -113,3 +113,27 @@ rules:
       - "trufflehog.*--json"
       - "chmod\\s+\\+x\\s+trufflehog"
     recommendation: "This package executes TruffleHog to scan for secrets. This is credential theft malware. Remove immediately and audit your GitHub tokens, AWS keys, and other credentials."
+
+  - id: "NPM-010"
+    name: "Webhook service exfiltration"
+    severity: "critical"
+    description: "Script sends data to free webhook collection services (webhook.site, requestbin, etc.). This is a common technique for exfiltrating stolen credentials."
+    patterns:
+      - "webhook\\.site"
+      - "webhook-test\\.com"
+      - "requestbin\\.com"
+      - "pipedream\\.com"
+      - "hookbin\\.com"
+      - "requestcatcher\\.com"
+      - "eo\\.requestcatcher\\.com"
+    recommendation: "This package sends data to a webhook collection service. This is commonly used for exfiltrating stolen credentials and environment variables. Remove this package immediately and rotate any tokens or credentials that may have been exposed."
+
+  - id: "NPM-011"
+    name: "Obfuscated webhook domain"
+    severity: "critical"
+    description: "Script contains base64-encoded or obfuscated webhook service domains"
+    patterns:
+      - "d2ViaG9vay5zaXRl"
+      - "cmVxdWVzdGJpbi5jb20"
+      - "cGlwZWRyZWFtLmNvbQ"
+    recommendation: "This package contains obfuscated references to webhook collection services. This indicates deliberate attempt to hide exfiltration. Remove immediately."

