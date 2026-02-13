@@ -184,7 +184,7 @@ ENTROPY_THRESHOLD = 4.5
 At the start of every coding session:
 
 1. Read this file (`CLAUDE.md`)
-2. Read `docs/decisions.md`
+2. Read `decisions.md`
 3. Check which implementation step we're on
 4. Review any open concerns from the last session
 5. Confirm the plan before writing code: "Starting Step N — here's what I'll build..."

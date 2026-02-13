@@ -17,6 +17,7 @@ class Orchestrator:
     PLUGIN_REGISTRY = {
         "npm-lifecycle": "dev_trust_scanner.plugins.npm_lifecycle",
         "vscode-tasks": "dev_trust_scanner.plugins.vscode_tasks",
+        "github-actions": "dev_trust_scanner.plugins.github_actions",
     }
 
     def __init__(self):

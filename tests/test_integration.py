@@ -240,8 +240,8 @@ class TestErrorResilience:
 
         assert result.summary["total"] == 0
         assert len(result.findings) == 0
-        # Both plugins should still run
-        assert len(result.plugins_run) == 2
+        # All plugins should still run
+        assert len(result.plugins_run) == 3
 
     def test_non_utf8_content_handling(self, tmp_path):
         """Test handling of binary/non-UTF8 content."""

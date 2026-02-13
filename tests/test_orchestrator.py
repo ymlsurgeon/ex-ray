@@ -10,16 +10,17 @@ class TestOrchestrator:
         """Test that orchestrator loads all registered plugins."""
         orchestrator = Orchestrator()
 
-        assert len(orchestrator.plugins) == 2  # npm-lifecycle and vscode-tasks
+        assert len(orchestrator.plugins) == 3  # npm-lifecycle, vscode-tasks, and github-actions
         assert "npm-lifecycle" in orchestrator.plugins
         assert "vscode-tasks" in orchestrator.plugins
+        assert "github-actions" in orchestrator.plugins
 
     def test_list_plugins(self):
         """Test listing plugin metadata."""
         orchestrator = Orchestrator()
         plugins = orchestrator.list_plugins()
 
-        assert len(plugins) == 2
+        assert len(plugins) == 3
         assert all("name" in p for p in plugins)
         assert all("version" in p for p in plugins)
 
@@ -29,9 +30,10 @@ class TestOrchestrator:
         result = orchestrator.scan(clean_npm_package)
 
         assert result.target_path == clean_npm_package
-        assert len(result.plugins_run) == 2  # Both plugins ran
+        assert len(result.plugins_run) == 3  # All plugins ran
         assert "npm-lifecycle" in result.plugins_run
         assert "vscode-tasks" in result.plugins_run
+        assert "github-actions" in result.plugins_run
         assert result.scan_duration_seconds >= 0
         assert result.summary["total"] == 0  # Clean package
 
@@ -98,7 +100,7 @@ class TestOrchestrator:
 
         assert result.summary["total"] == 0
         assert len(result.findings) == 0
-        assert len(result.plugins_run) == 2  # Both still ran
+        assert len(result.plugins_run) == 3  # All plugins still ran
 
     def test_unknown_plugin_filter(self, clean_npm_package):
         """Test filtering with unknown plugin name."""
