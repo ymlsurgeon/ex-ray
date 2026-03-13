@@ -575,3 +575,4 @@ See `CLAUDE.md` for detailed development workflow and coding standards.
 **Status**: ✅ **MVP Complete** (v0.1.0) - Production Ready
 
 Built with ❤️ for the security community
+# dev-trust-scanner-action
