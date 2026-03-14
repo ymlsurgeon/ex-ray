@@ -13,6 +13,7 @@ from ...core.static_analysis import (
     calculate_entropy,
     detect_base64,
     detect_obfuscation,
+    get_context_lines,
     match_rules,
 )
 
@@ -198,14 +199,16 @@ class NpmLifecyclePlugin(BasePlugin):
         # Base64 detection
         base64_matches = detect_base64(js_content, min_length=30)
         if base64_matches:
+            b64_line = base64_matches[0].line_number
             findings.append(
                 Finding(
                     rule_id="NPM-BASE64",
                     rule_name="Base64 content in lifecycle script file",
                     severity=Severity.HIGH,
                     file_path=relative_path,
-                    line_number=base64_matches[0].line_number,
+                    line_number=b64_line,
                     matched_content=base64_matches[0].matched_text,
+                    context_lines=get_context_lines(js_content, b64_line) if b64_line else None,
                     description=f"File executed by '{script_name}' contains base64-encoded content",
                     recommendation="Decode the base64 content and verify it is legitimate.",
                     plugin_name=self.get_metadata()["name"],
@@ -215,14 +218,16 @@ class NpmLifecyclePlugin(BasePlugin):
         # Obfuscation detection
         obfuscation_matches = detect_obfuscation(js_content)
         if obfuscation_matches:
+            obf_line = obfuscation_matches[0].line_number
             findings.append(
                 Finding(
                     rule_id="NPM-OBFUSCATION",
                     rule_name="Code obfuscation in lifecycle script file",
                     severity=Severity.HIGH,
                     file_path=relative_path,
-                    line_number=obfuscation_matches[0].line_number,
+                    line_number=obf_line,
                     matched_content=obfuscation_matches[0].matched_text[:200],
+                    context_lines=get_context_lines(js_content, obf_line) if obf_line else None,
                     description=f"File executed by '{script_name}' contains obfuscated code ({obfuscation_matches[0].pattern_name})",
                     recommendation="Deobfuscate and inspect. Legitimate packages rarely use obfuscation.",
                     plugin_name=self.get_metadata()["name"],

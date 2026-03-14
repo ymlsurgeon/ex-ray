@@ -101,6 +101,12 @@ class TextReporter:
             content = content[:100] + "..."
         self.console.print(f'   Match: "{content}"', style=color)
 
+        if finding.context_lines:
+            self.console.print("   Context:", style=color)
+            for line in finding.context_lines:
+                self.console.print(f"     {line}", style="dim")
+            self.console.print("")
+
         self.console.print(f"   → {finding.recommendation}\n")
 
 
@@ -228,19 +234,27 @@ class SarifReporter:
         if finding.matched_content:
             message = f"{finding.description}\nMatched: {finding.matched_content}"
 
+        phys_loc: dict = {
+            "artifactLocation": {
+                "uri": str(finding.file_path),
+                "uriBaseId": "%SRCROOT%",
+            },
+            "region": region,
+        }
+
+        # contextRegion gives analysts the surrounding lines in GitHub Code Scanning
+        if finding.context_lines and finding.line_number:
+            ctx_start = max(1, finding.line_number - 4)
+            ctx_end = ctx_start + len(finding.context_lines) - 1
+            phys_loc["contextRegion"] = {
+                "startLine": ctx_start,
+                "endLine": ctx_end,
+                "snippet": {"text": "\n".join(finding.context_lines)},
+            }
+
         return {
             "ruleId": finding.rule_id,
             "level": self._severity_to_sarif_level(finding.severity),
             "message": {"text": message},
-            "locations": [
-                {
-                    "physicalLocation": {
-                        "artifactLocation": {
-                            "uri": str(finding.file_path),
-                            "uriBaseId": "%SRCROOT%",
-                        },
-                        "region": region,
-                    }
-                }
-            ],
+            "locations": [{"physicalLocation": phys_loc}],
         }

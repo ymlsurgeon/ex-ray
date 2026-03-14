@@ -51,6 +51,10 @@ class Finding(BaseModel):
     file_path: Path = Field(..., description="Path to file containing the finding")
     line_number: Optional[int] = Field(None, description="Line number in the file")
     matched_content: str = Field(..., description="The suspicious content found")
+    context_lines: Optional[list[str]] = Field(
+        None,
+        description="Surrounding lines of code (±window) for analyst context",
+    )
     description: str = Field(..., description="What was detected and why it matters")
     recommendation: str = Field(..., description="Remediation advice")
     plugin_name: str = Field(..., description="Plugin that produced this finding")

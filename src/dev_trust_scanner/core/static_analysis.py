@@ -328,6 +328,13 @@ def match_rules(
 
         # Create Finding if rule matched
         if rule_matched:
+            # Only capture context for multi-line content (e.g. JS files).
+            # Single-line command strings already have full content in matched_content.
+            ctx = (
+                get_context_lines(text, line_number)
+                if (line_number and '\n' in text)
+                else None
+            )
             findings.append(Finding(
                 rule_id=rule.id,
                 rule_name=rule.name,
@@ -335,12 +342,31 @@ def match_rules(
                 file_path=file_path,
                 line_number=line_number,
                 matched_content=matched_content,
+                context_lines=ctx,
                 description=rule.description,
                 recommendation=rule.recommendation,
                 plugin_name=plugin_name
             ))
 
     return findings
+
+
+def get_context_lines(content: str, line_number: int, window: int = 4) -> list[str]:
+    """
+    Return lines surrounding line_number (1-based), ±window lines.
+
+    Args:
+        content: Full file text
+        line_number: 1-based line number to centre on
+        window: Number of lines before and after to include
+
+    Returns:
+        Slice of lines (may be fewer than 2*window+1 near file boundaries)
+    """
+    lines = content.splitlines()
+    start = max(0, line_number - 1 - window)
+    end = min(len(lines), line_number + window)
+    return lines[start:end]
 
 
 def _position_to_line(text: str, position: int) -> int:
