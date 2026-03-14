@@ -202,10 +202,10 @@ class SarifReporter:
     # GitHub code scanning maps these to colored severity badges:
     #   >= 9.0 → Critical, >= 7.0 → High, >= 4.0 → Medium, >= 0.1 → Low
     _SECURITY_SEVERITY: dict = {
-        Severity.CRITICAL: 9.5,
-        Severity.HIGH: 8.0,
-        Severity.MEDIUM: 5.0,
-        Severity.LOW: 2.0,
+        Severity.CRITICAL: "9.5",
+        Severity.HIGH: "8.0",
+        Severity.MEDIUM: "5.0",
+        Severity.LOW: "2.0",
     }
 
     def _severity_to_sarif_level(self, severity: Severity) -> str:
