@@ -41,6 +41,9 @@ dev-trust-scan = "dev_trust_scanner.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+dev_trust_scanner = ["plugins/*/rules/*.yaml"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
