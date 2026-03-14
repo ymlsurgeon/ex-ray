@@ -1,11 +1,14 @@
 """Output formatters for scan results."""
 
 import json
+from datetime import datetime, timezone
 
 from rich.console import Console
 from rich.rule import Rule
 
 from .models import ScanResult, Severity
+
+_VERSION = "0.1.0"
 
 
 class TextReporter:
@@ -120,53 +123,101 @@ class JsonReporter:
 class SarifReporter:
     """SARIF 2.1.0 format for CI/CD integration."""
 
-    def report(self, result: ScanResult) -> str:
+    def report(self, result: ScanResult, tenant_id: str | None = None) -> str:
         """
         Generate SARIF 2.1.0 format report.
 
         Args:
             result: Scan result to report
+            tenant_id: Optional tenant identifier injected into run.properties
 
         Returns:
-            SARIF JSON string
+            SARIF JSON string compatible with GitHub code scanning
         """
+        run: dict = {
+            "tool": {
+                "driver": {
+                    "name": "Dev Trust Scanner",
+                    "version": _VERSION,
+                    "informationUri": "https://github.com/ymlsurgeon/dev-trust-scanner",
+                    "rules": self._build_rules_array(result),
+                }
+            },
+            "properties": {
+                "scanTimestamp": datetime.now(timezone.utc).isoformat(),
+                "scannerVersion": _VERSION,
+            },
+            "results": [self._finding_to_sarif(f) for f in result.findings],
+        }
+
+        if tenant_id:
+            run["properties"]["tenantId"] = tenant_id
+
         sarif = {
             "version": "2.1.0",
             "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
-            "runs": [
-                {
-                    "tool": {
-                        "driver": {
-                            "name": "Dev Trust Scanner",
-                            "version": "0.1.0",
-                            "informationUri": "https://github.com/ymlsurgeon/dev-trust-scanner",
-                        }
-                    },
-                    "results": [self._finding_to_sarif(f) for f in result.findings],
-                }
-            ],
+            "runs": [run],
         }
 
         return json.dumps(sarif, indent=2)
 
-    def _finding_to_sarif(self, finding) -> dict:
-        """Convert Finding to SARIF result object."""
-        # Map severity to SARIF levels
+    def _build_rules_array(self, result: ScanResult) -> list[dict]:
+        """
+        Build the tool.driver.rules array from scan findings.
+
+        GitHub code scanning uses this to display rule names and descriptions
+        as inline annotations on PRs. Without it, findings show as 'unknown rule'.
+
+        Args:
+            result: Scan result containing findings
+
+        Returns:
+            Deduplicated list of SARIF rule descriptor objects
+        """
+        seen: set[str] = set()
+        rules = []
+
+        for finding in result.findings:
+            if finding.rule_id in seen:
+                continue
+            seen.add(finding.rule_id)
+
+            rules.append({
+                "id": finding.rule_id,
+                "name": finding.rule_name,
+                "shortDescription": {"text": finding.rule_name},
+                "fullDescription": {"text": finding.description},
+                "help": {"text": finding.recommendation, "markdown": finding.recommendation},
+                "defaultConfiguration": {
+                    "level": self._severity_to_sarif_level(finding.severity),
+                },
+            })
+
+        return rules
+
+    def _severity_to_sarif_level(self, severity: Severity) -> str:
+        """Map Severity enum to SARIF level string."""
         severity_map = {
             Severity.CRITICAL: "error",
             Severity.HIGH: "error",
             Severity.MEDIUM: "warning",
             Severity.LOW: "note",
         }
+        return severity_map[severity]
 
+    def _finding_to_sarif(self, finding) -> dict:
+        """Convert Finding to SARIF result object."""
         return {
             "ruleId": finding.rule_id,
-            "level": severity_map[finding.severity],
+            "level": self._severity_to_sarif_level(finding.severity),
             "message": {"text": finding.description},
             "locations": [
                 {
                     "physicalLocation": {
-                        "artifactLocation": {"uri": str(finding.file_path)},
+                        "artifactLocation": {
+                            "uri": str(finding.file_path),
+                            "uriBaseId": "%SRCROOT%",
+                        },
                         "region": {"startLine": finding.line_number or 1},
                     }
                 }
