@@ -72,6 +72,18 @@ class TextReporter:
 
         self.console.print(summary_text)
 
+        # Scanned files section
+        if result.scanned_files:
+            self.console.print(
+                f"\nFiles scanned ({len(result.scanned_files)}):", style="dim"
+            )
+            for f in result.scanned_files:
+                self.console.print(f"  {f}", style="dim")
+        else:
+            self.console.print(
+                "\nFiles scanned: No supported files found in scan target.", style="dim"
+            )
+
     def _print_finding(self, finding) -> None:
         """Print single finding with color coding."""
         # Color and icon by severity
@@ -152,6 +164,7 @@ class SarifReporter:
             "properties": {
                 "scanTimestamp": datetime.now(timezone.utc).isoformat(),
                 "scannerVersion": _VERSION,
+                "scannedFiles": result.scanned_files,
             },
             "results": [self._finding_to_sarif(f) for f in result.findings],
         }

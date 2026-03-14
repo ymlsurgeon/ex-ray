@@ -147,6 +147,10 @@ class ScanResult(BaseModel):
     plugins_run: list[str] = Field(
         default_factory=list, description="Names of plugins that executed"
     )
+    scanned_files: list[str] = Field(
+        default_factory=list,
+        description="Relative paths of all files examined during scan",
+    )
     scan_duration_seconds: float = Field(..., description="Total scan time")
     summary: dict[str, int] = Field(
         default_factory=dict, description="Severity counts and totals"

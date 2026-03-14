@@ -63,6 +63,7 @@ class VsCodeTasksPlugin(BasePlugin):
             List of findings from tasks.json files found
         """
         findings = []
+        self.scanned_files = []
 
         try:
             # Look for .vscode/tasks.json
@@ -73,6 +74,7 @@ class VsCodeTasksPlugin(BasePlugin):
                     logger.warning(f"Skipping {tasks_file}: exceeds 10MB")
                     return findings
 
+                self.scanned_files.append(tasks_file)
                 findings.extend(self._scan_tasks_file(tasks_file, target_path))
 
         except Exception as e:

@@ -14,6 +14,10 @@ class BasePlugin(ABC):
     metadata, and supported file patterns.
     """
 
+    def __init__(self):
+        """Initialize base plugin state."""
+        self.scanned_files: list[Path] = []
+
     @abstractmethod
     def scan(self, target_path: Path) -> list[Finding]:
         """

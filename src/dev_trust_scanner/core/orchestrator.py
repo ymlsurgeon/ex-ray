@@ -58,6 +58,7 @@ class Orchestrator:
         start_time = time.time()
         all_findings = []
         plugins_run = []
+        all_scanned: list[str] = []
 
         # Determine which plugins to run
         if plugin_filter:
@@ -81,6 +82,11 @@ class Orchestrator:
                 all_findings.extend(findings)
                 plugins_run.append(name)
                 logger.info(f"Plugin {name} found {len(findings)} issue(s)")
+                for path in getattr(plugin, "scanned_files", []):
+                    try:
+                        all_scanned.append(str(path.relative_to(target_path)))
+                    except ValueError:
+                        all_scanned.append(str(path))
             except Exception as e:
                 logger.error(f"Plugin {name} failed: {e}")
                 # Continue with other plugins (per DEC-009)
@@ -95,6 +101,7 @@ class Orchestrator:
             target_path=target_path,
             findings=all_findings,
             plugins_run=plugins_run,
+            scanned_files=sorted(set(all_scanned)),
             scan_duration_seconds=round(duration, 2),
             summary=summary,
         )

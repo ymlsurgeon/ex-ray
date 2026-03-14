@@ -38,6 +38,7 @@ class GitHubActionsPlugin(BasePlugin):
             List of security findings
         """
         findings = []
+        self.scanned_files = []
 
         # Find all workflow files
         workflows_dir = target_path / ".github" / "workflows"
@@ -46,6 +47,7 @@ class GitHubActionsPlugin(BasePlugin):
 
         for workflow_file in workflows_dir.glob("*.y*ml"):  # *.yml and *.yaml
             try:
+                self.scanned_files.append(workflow_file)
                 findings.extend(self._scan_workflow_file(workflow_file))
             except Exception as e:
                 logger.error(f"Error scanning {workflow_file}: {e}")

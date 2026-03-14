@@ -72,6 +72,7 @@ class NpmLifecyclePlugin(BasePlugin):
             List of findings from all package.json files found
         """
         findings = []
+        self.scanned_files = []
 
         try:
             # Find all package.json files (supports monorepos)
@@ -86,6 +87,7 @@ class NpmLifecyclePlugin(BasePlugin):
                     logger.warning(f"Skipping {pkg_file}: exceeds 10MB size limit")
                     continue
 
+                self.scanned_files.append(pkg_file)
                 findings.extend(self._scan_package_json(pkg_file, target_path))
 
         except Exception as e:
@@ -149,6 +151,8 @@ class NpmLifecyclePlugin(BasePlugin):
         if js_path.stat().st_size > 10 * 1024 * 1024:
             logger.warning(f"Skipping {js_path}: exceeds 10MB size limit")
             return []
+
+        self.scanned_files.append(js_path)
 
         # Read the JavaScript file
         try:
