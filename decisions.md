@@ -1,461 +1,398 @@
-# Dev Trust Scanner — Phase 2: Detection Rule Expansion
+# Dev Trust Scanner — CI/CD Integration Build Plan
 
-> **Purpose**: Phase 2 implementation guide for Claude Code. This document defines the new detection rules, the GitHub Actions plugin, and the implementation sequence. Reference this file before writing any code.
+> **Purpose**: Implementation guide for Claude Code. This document defines the work to ship Dev Trust Scanner as a CI/CD-integrated tool that delivers SARIF findings to both GitHub code scanning and an MDR analyst pipeline via webhook.
 >
-> **Phase 1 Status**: ✅ Complete — 146 tests passing, 94% coverage, 13+ rules deployed, plugin architecture operational.
+> **Prerequisite**: Phase 1 complete. Phase 2 detection rules may or may not be complete — this work is independent and can proceed in parallel.
 >
-> **Phase 2 Mission**: Expand detection capabilities with 7 new rules targeting active attack campaigns, and ship a new GitHub Actions plugin as a first-class scanning surface.
+> **Read `CLAUDE.md` before starting.** All behavioral protocols apply.
 
 ---
 
-## Phase 2 Scope
+## Context
 
-### In Scope
+Dev Trust Scanner currently runs as a local CLI tool producing SARIF, JSON, and text output to stdout or file. This build adds three capabilities:
 
-- 7 new detection rules (see DEC-P2-001 through DEC-P2-007)
-- New `github_actions` plugin (first-class, same standing as `npm_lifecycle` and `vscode_tasks`)
-- Test coverage for every new rule against both malicious samples AND known-good packages
-- Updated README with new capabilities
+1. **Webhook delivery** — POST SARIF results to an HTTP endpoint (e.g., Sumo Logic collector)
+2. **Tenant tagging** — Inject customer metadata into SARIF so the MDR SIEM can route by customer
+3. **GitHub Action packaging** — A reusable GitHub Action so customers add scanning to their repos in minutes
 
-### Out of Scope (Deferred)
-
-- Typosquatting detection (`core/typosquatting.py`) — deferred to future phase
-- Multi-file correlation logic — deferred to future phase
-- Sample corpus testing framework — deferred to future phase
-- Automated sample fetching from opensourcemalware.com — deferred to future phase
+These three pieces close the loop between "scanner produces findings" and "MDR analyst sees an alert."
 
 ---
 
-## Detection Rules — Implementation Decisions
+## Decisions
 
-### DEC-P2-001: TruffleHog Binary Download Detection
+### DEC-CICD-001: Webhook Delivery Flag
 
-**Priority**: 1 (Highest — actively used in Shai-Hulud campaigns)
+**Decision**: Add `--webhook-url` flag to the CLI that HTTP POSTs the SARIF output to a configurable URL.
 
-**Plugin**: `npm_lifecycle`
+**Rationale**: This is the single most enabling feature for MDR integration. SARIF is already produced — we just need transport.
 
-**What to detect**: Scripts that download the TruffleHog binary for credential/secret scanning on victim machines.
-
-**Patterns**:
-
-- URLs containing `trufflesecurity/trufflehog` or `trufflehog` binary download paths
-- Binary extraction commands following TruffleHog downloads (`tar`, `unzip`, `chmod +x`)
-- Execution of downloaded TruffleHog binary (`./trufflehog`, `trufflehog filesystem`, `trufflehog git`)
-
-**Severity**: CRITICAL
-
-**Rule IDs**: NPM-LC-XXX (assign next available sequence numbers)
-
-**Rationale**: TruffleHog is a legitimate tool, but downloading and executing it via npm lifecycle scripts is a strong indicator of credential theft. This is a core technique in the Shai-Hulud worm campaign.
-
-**Remediation guidance**: "This package downloads and executes TruffleHog, a secret-scanning tool. Legitimate packages do not scan your filesystem for credentials during installation. Remove this package immediately and rotate any exposed secrets."
-
-**Test requirements**:
-
-- Fixture with realistic Shai-Hulud-style postinstall script downloading TruffleHog
-- Fixture with legitimate package referencing TruffleHog in README/docs (must NOT trigger)
-- Validate against top 100 popular npm packages — zero false positives expected
-
----
-
-### DEC-P2-002: GitHub Actions Workflow Injection Patterns
-
-**Priority**: 2 (Persistence mechanism — Shai-Hulud campaign)
-
-**Plugin**: `github_actions` (NEW PLUGIN — see DEC-P2-008)
-
-**What to detect**: Malicious GitHub Actions workflow files planted by compromised packages or scripts.
-
-**Patterns**:
-
-- Known malicious workflow filenames: `shai-hulud-workflow.yml`, variations
-- Workflow files with suspicious triggers: `workflow_dispatch` combined with `schedule` for persistence
-- Self-hosted runner registration within workflow files
-- Workflow files that download and execute external scripts (`curl | bash`, `wget | sh`)
-- Workflows that exfiltrate secrets via environment variable dumping (`env`, `printenv`)
-- Suspicious `runs-on: self-hosted` without clear organizational context
-
-**Severity**: CRITICAL for known malicious filenames, HIGH for suspicious patterns
-
-**Rule IDs**: GHA-XXX (new rule ID prefix for GitHub Actions plugin)
-
-**File targets**: `.github/workflows/*.yml`, `.github/workflows/*.yaml`
-
-**Rationale**: Attackers use malicious workflow files for persistence — they execute on push/schedule without developer intervention. The Shai-Hulud campaign specifically plants workflow files that register self-hosted runners.
-
-**Remediation guidance**: "This workflow file contains patterns associated with malicious GitHub Actions injection. Review all workflow files in .github/workflows/ and remove any you did not create. Audit your repository's Actions history for unauthorized runs."
-
-**Test requirements**:
-
-- Fixtures with known Shai-Hulud workflow patterns
-- Fixtures with legitimate CI/CD workflows (build, test, deploy) — must NOT trigger
-- Fixtures with common open-source workflows (release-please, dependabot) — must NOT trigger
-- Edge case: legitimate use of `workflow_dispatch` + `schedule` (e.g., nightly builds)
-
----
-
-### DEC-P2-003: Repository Creation with Campaign Markers
-
-**Priority**: 3 (Campaign attribution)
-
-**Plugin**: `npm_lifecycle`
-
-**What to detect**: Code that creates GitHub repositories with known malware campaign marker strings.
-
-**Patterns**:
-
-- String literals: `"Shai-Hulud"`, `"Sha1-Hulud"`, `"Sha1-Hulud: The Second Coming"`
-- String literals: `"Goldox-T3chs"`, `"Goldox-T3chs: Only Happy Girl"`
-- Repository name patterns with `-migration` suffix used as campaign markers
-- GitHub API calls (`api.github.com/user/repos`) combined with the above markers
-- `git init` + `git remote add` combined with marker strings
-
-**Severity**: CRITICAL
-
-**Rule IDs**: NPM-LC-XXX (assign next available)
-
-**Rationale**: These strings are campaign identifiers used by threat actors to track worm propagation. Their presence in any package is a definitive indicator of compromise.
-
-**Remediation guidance**: "This package contains code that creates GitHub repositories with known malware campaign markers. This is a definitive indicator of the Shai-Hulud supply chain worm. Remove this package immediately, audit your GitHub account for unauthorized repositories, and revoke any GitHub tokens that may have been exposed."
-
-**Test requirements**:
-
-- Fixtures containing each marker string in realistic attack context
-- Fixtures with legitimate migration-related package names — must NOT trigger on `-migration` alone
-- Fixtures with "Dune" references in comments/docs (the name Shai-Hulud comes from Dune) — must NOT trigger on contextual references, only on code patterns
-
----
-
-### DEC-P2-004: Docker Privilege Escalation Attempts
-
-**Priority**: 4
-
-**Plugin**: `npm_lifecycle`
-
-**What to detect**: Scripts that attempt Docker socket access or container escape techniques.
-
-**Patterns**:
-
-- Docker socket paths: `/var/run/docker.sock`
-- Privileged container flags: `--privileged`, `--cap-add=ALL`, `--cap-add=SYS_ADMIN`
-- Docker socket mounting: `-v /var/run/docker.sock`
-- Container escape indicators: `nsenter`, `chroot /host`
-- Docker API calls to local socket
-
-**Severity**: HIGH
-
-**Rule IDs**: NPM-LC-XXX (assign next available)
-
-**Rationale**: No legitimate npm package should be accessing the Docker socket or requesting elevated container privileges during installation. This indicates either container escape or host compromise attempts.
-
-**Remediation guidance**: "This package attempts to access the Docker daemon socket or use privileged container capabilities. Legitimate npm packages do not require Docker access during installation. Review the script and remove the package if you did not explicitly expect Docker interaction."
-
-**Test requirements**:
-
-- Fixtures with Docker socket access in postinstall scripts
-- Fixtures with Docker-related tooling packages (docker-compose wrappers, etc.) — calibrate to avoid false positives on legitimate Docker tools
-- Document expected false positive rate for Docker ecosystem packages
-
----
-
-### DEC-P2-005: Webhook.site Exfiltration Patterns
-
-**Priority**: 5 (Common across many campaigns)
-
-**Plugin**: `npm_lifecycle`
-
-**What to detect**: Data exfiltration to free webhook collection services.
-
-**Patterns**:
-
-- Domains: `webhook.site`, `webhook-test.com`, `requestbin.com`, `pipedream.com`, `hookbin.com`, `requestcatcher.com`
-- URL patterns: `https://webhook.site/` followed by UUID
-- HTTP requests (`curl`, `wget`, `fetch`, `axios`, `http.request`) targeting these domains
-- Encoded/obfuscated versions of these domains (base64, hex, string concatenation)
-
-**Severity**: CRITICAL
-
-**Rule IDs**: NPM-LC-XXX (assign next available)
-
-**Rationale**: Free webhook services are heavily used for exfiltrating stolen credentials, environment variables, and tokens. No legitimate npm package sends data to webhook.site during installation.
-
-**Remediation guidance**: "This package sends data to a webhook collection service (webhook.site or similar). This is a common technique for exfiltrating stolen credentials and environment variables. Remove this package immediately and rotate any tokens or credentials that may have been exposed."
-
-**Test requirements**:
-
-- Fixtures with various webhook exfiltration patterns (curl, fetch, axios)
-- Fixtures with obfuscated webhook URLs (base64-encoded domain)
-- Fixtures with legitimate webhook documentation/testing packages — calibrate carefully
-- Validate no false positives on packages that mention webhook.site in README/docs only
-
----
-
-### DEC-P2-006: Self-hosted GitHub Runner Installation
-
-**Priority**: 6 (Persistence mechanism)
-
-**Plugin**: `npm_lifecycle` and `github_actions`
-
-**What to detect**: Code that installs GitHub Actions self-hosted runners for persistence.
-
-**Patterns**:
-
-- Runner download URLs: `actions/runner/releases`
-- Runner configuration: `config.sh`, `config.cmd` with `--url` and `--token`
-- Runner service installation: `svc.sh install`, runner as systemd service
-- Runner token requests: API calls to `/actions/runners/registration-token`
-- Runner binary execution: `run.sh`, `run.cmd`
-
-**Severity**: CRITICAL
-
-**Rule IDs**: NPM-LC-XXX for npm plugin, GHA-XXX for GitHub Actions plugin
-
-**Rationale**: Installing self-hosted runners gives attackers persistent code execution on victim infrastructure. This is used in Shai-Hulud for maintaining access after initial compromise.
-
-**Remediation guidance**: "This package or workflow installs a GitHub Actions self-hosted runner. Self-hosted runners should only be configured through your organization's official process. An unauthorized runner installation indicates an attempt to establish persistent access to your infrastructure. Remove immediately and audit for any runners registered to your repositories."
-
-**Test requirements**:
-
-- Fixtures with runner installation scripts in npm lifecycle hooks
-- Fixtures with workflow files that configure self-hosted runners
-- Fixtures with legitimate self-hosted runner setup documentation — must NOT trigger
-
----
-
-### DEC-P2-007: Preinstall vs Postinstall Timing Analysis
-
-**Priority**: 7
-
-**Plugin**: `npm_lifecycle`
-
-**What to detect**: Packages using `preinstall` scripts, which execute earlier and have wider impact than `postinstall`.
-
-**Patterns**:
-
-- Presence of `preinstall` script in package.json
-- Combined with any other suspicious indicator (network calls, encoded strings, file system access)
-- `preinstall` scripts that do more than simple validation or environment checks
-
-**Severity**: MEDIUM for `preinstall` presence alone, escalate to HIGH when combined with other indicators
-
-**Rule IDs**: NPM-LC-XXX (assign next available)
-
-**Rationale**: `preinstall` runs before dependencies are installed, giving attackers earlier execution. Most legitimate packages use `postinstall` or `prepare`. The presence of `preinstall` with suspicious content is a stronger signal than `postinstall` with the same content.
-
-**Remediation guidance**: "This package uses a preinstall script, which executes before dependencies are installed. While not inherently malicious, preinstall scripts run earlier in the installation process and are less commonly used by legitimate packages. Review the script contents carefully."
-
-**Test requirements**:
-
-- Fixtures with `preinstall` containing suspicious patterns (higher severity)
-- Fixtures with `preinstall` doing legitimate work (environment detection, native compilation checks)
-- Fixtures comparing same suspicious content in `preinstall` vs `postinstall` — verify severity difference
-- Validate against top 100 npm packages that use `preinstall` legitimately
-
----
-
-## New Plugin Decision
-
-### DEC-P2-008: GitHub Actions Plugin — First-Class Plugin
-
-**Decision**: Create a new `github_actions` plugin at `src/dev_trust_scanner/plugins/github_actions/` with the same standing and architecture as `npm_lifecycle` and `vscode_tasks`.
-
-**Structure**:
+**Specification**:
 
 ```
-src/dev_trust_scanner/plugins/github_actions/
-├── __init__.py
-├── scanner.py
-└── rules/
-    └── gha_rules.yaml
+dev-trust-scan /path/to/project --format sarif --webhook-url https://collectors.sumologic.com/receiver/v1/http/TOKEN
 ```
 
-**Plugin metadata**:
+**Implementation Requirements**:
 
-- Name: `github_actions`
-- Supported files: `.github/workflows/*.yml`, `.github/workflows/*.yaml`
-- Rule ID prefix: `GHA-`
+- New module: `src/dev_trust_scanner/core/webhook.py`
+- Single function: `post_sarif(url: str, sarif_data: dict, tenant_id: str | None, timeout: int = 30) -> bool`
+- Use `urllib.request` from stdlib — **no new dependencies** (no `requests`, no `httpx`)
+- HTTP POST with `Content-Type: application/json`
+- Include `X-Tenant-ID` header if tenant_id is provided
+- Include `User-Agent: dev-trust-scanner/{version}` header
+- Return `True` on 2xx response, `False` otherwise
+- Log the HTTP status code and response body on failure
+- **Never raise on webhook failure** — scan results should still be written to stdout/file even if the webhook POST fails. Webhook is fire-and-forget with logging.
+- Timeout default: 30 seconds
+- No retry logic in v1 (keep it simple)
 
-**Scanner responsibilities**:
+**CLI Integration** (in `cli.py`):
 
-- Parse YAML workflow files
-- Evaluate rules from `gha_rules.yaml`
-- Handle malformed YAML gracefully (per DEC-009 — never crash on bad input)
-- Report findings with file path, line numbers where possible, matched pattern, and severity
+- Add `--webhook-url` option (type: string, default: None)
+- After scan completes and SARIF is generated, if `--webhook-url` is set, call `post_sarif()`
+- Webhook POST happens **after** normal output (file write or stdout), not instead of it
+- Log success: `"SARIF results posted to webhook (HTTP {status_code})"`
+- Log failure: `"Webhook delivery failed (HTTP {status_code}): {response_body}"`
 
-**Design constraints**:
+**Tests**:
 
-- Same plugin interface as existing plugins: `scan()`, `get_metadata()`, `get_supported_files()`
-- Plugin must stay under 300 LOC — shared logic goes to `static_analysis.py`
-- No network calls — static analysis only
-- Must integrate seamlessly with existing orchestrator and CLI
+- Unit test `post_sarif()` with mocked HTTP responses (2xx, 4xx, 5xx, timeout, connection error)
+- Integration test: CLI with `--webhook-url` flag produces both file output AND webhook POST
+- Test that webhook failure does not prevent normal output
+- Test `X-Tenant-ID` header presence when tenant_id is set, absence when None
 
-**Rule ID convention**: `GHA-001`, `GHA-002`, etc.
+**LOC Budget**: ~60 lines for `webhook.py`, ~15 lines of CLI additions
 
-**Rationale**: GitHub Actions is a premiere attack surface for supply chain attacks. Workflow injection and self-hosted runner abuse are active TTPs in current campaigns. This plugin should be featured prominently in documentation and README.
+---
+
+### DEC-CICD-002: Tenant ID Tagging
+
+**Decision**: Add `--tenant-id` flag that injects customer metadata into the SARIF output and webhook headers.
+
+**Rationale**: When the MDR receives SARIF from multiple customers, it needs to know which customer each finding belongs to. This enables SIEM routing, per-customer dashboards, and analyst assignment.
+
+**Specification**:
+
+```
+dev-trust-scan /path/to/project --format sarif --tenant-id "acme-corp" --webhook-url https://...
+```
+
+**Implementation Requirements**:
+
+**SARIF Injection** (in `reporting.py` or a new helper):
+
+- Add `tenant_id` to the SARIF `run.properties` bag:
+  ```json
+  {
+    "runs": [{
+      "properties": {
+        "tenantId": "acme-corp"
+      },
+      "tool": { ... },
+      "results": [ ... ]
+    }]
+  }
+  ```
+- This is the standard SARIF extension mechanism — `properties` is a property bag for tool-specific metadata
+- Also add to `run.properties`: `"scanTimestamp"` (ISO 8601) and `"scannerVersion"` (from package version)
+
+**Webhook Header** (in `webhook.py`):
+
+- Include `X-Tenant-ID: {tenant_id}` header on webhook POST
+- This allows SIEM ingestion to route by header without parsing the SARIF body
+
+**CLI Integration**:
+
+- Add `--tenant-id` option (type: string, default: None)
+- Pass through to both SARIF generation and webhook delivery
+- Tenant ID is optional — scanner works fine without it for standalone use
+
+**Tests**:
+
+- Unit test: SARIF output contains `tenantId` in `run.properties` when flag is set
+- Unit test: SARIF output does NOT contain `tenantId` when flag is omitted
+- Unit test: Webhook POST includes `X-Tenant-ID` header when set
+- Integration test: Full CLI flow with both flags produces correct SARIF and webhook behavior
+
+**LOC Budget**: ~20 lines in reporting, ~5 lines in CLI
+
+---
+
+### DEC-CICD-003: GitHub Action Wrapper
+
+**Decision**: Create a GitHub Action that wraps the Dev Trust Scanner CLI for use in customer CI/CD pipelines.
+
+**Rationale**: A pre-built GitHub Action reduces customer onboarding to copying a workflow file and adding one secret. This is the primary delivery mechanism for MDR customers.
+
+**Implementation**: This is a **separate repository** — `ymlsurgeon/dev-trust-scanner-action`
+
+**Action Structure**:
+
+```
+dev-trust-scanner-action/
+├── action.yml              # GitHub Action metadata
+├── Dockerfile              # Container action packaging
+├── entrypoint.sh           # Thin shell wrapper
+├── README.md               # Usage docs with examples
+└── .github/
+    └── workflows/
+        └── test.yml        # Self-test workflow
+```
+
+**action.yml**:
+
+```yaml
+name: 'Dev Trust Scanner'
+description: 'Static analysis scanner for malicious patterns in developer tooling configurations'
+branding:
+  icon: 'shield'
+  color: 'red'
+
+inputs:
+  scan_path:
+    description: 'Path to scan (defaults to repo root)'
+    required: false
+    default: '.'
+  webhook_url:
+    description: 'URL to POST SARIF results to (e.g., Sumo Logic HTTP source)'
+    required: false
+  tenant_id:
+    description: 'Customer/tenant identifier for MDR routing'
+    required: false
+  severity_threshold:
+    description: 'Minimum severity to report (LOW, MEDIUM, HIGH, CRITICAL)'
+    required: false
+    default: 'LOW'
+  format:
+    description: 'Output format (sarif, json, text)'
+    required: false
+    default: 'sarif'
+  fail_on_findings:
+    description: 'Fail the action if findings are detected (true/false)'
+    required: false
+    default: 'false'
+
+outputs:
+  findings_count:
+    description: 'Total number of findings'
+  critical_count:
+    description: 'Number of CRITICAL findings'
+  sarif_file:
+    description: 'Path to SARIF output file'
+
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+```
+
+**Dockerfile**:
+
+```dockerfile
+FROM python:3.12-slim
+COPY --from=ghcr.io/ymlsurgeon/dev-trust-scanner:latest /app /app
+# OR: pip install dev-trust-scanner (when published to PyPI)
+RUN pip install --no-cache-dir dev-trust-scanner
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+```
+
+**entrypoint.sh**:
+
+```bash
+#!/bin/bash
+set -e
+
+SCAN_PATH="${INPUT_SCAN_PATH:-.}"
+FORMAT="${INPUT_FORMAT:-sarif}"
+SEVERITY="${INPUT_SEVERITY_THRESHOLD:-LOW}"
+SARIF_FILE="/tmp/dev-trust-scanner-results.sarif"
+
+# Build command
+CMD="dev-trust-scan ${SCAN_PATH} --format ${FORMAT}"
+
+# Optional flags
+[ -n "${INPUT_WEBHOOK_URL}" ] && CMD="${CMD} --webhook-url ${INPUT_WEBHOOK_URL}"
+[ -n "${INPUT_TENANT_ID}" ] && CMD="${CMD} --tenant-id ${INPUT_TENANT_ID}"
+[ -n "${INPUT_SEVERITY_THRESHOLD}" ] && CMD="${CMD} --severity ${INPUT_SEVERITY_THRESHOLD}"
+
+# Always write SARIF to file for GitHub upload
+CMD="${CMD} --output ${SARIF_FILE}"
+
+# Run scan
+echo "::group::Dev Trust Scanner"
+eval ${CMD}
+EXIT_CODE=$?
+echo "::endgroup::"
+
+# Parse results for outputs
+if [ -f "${SARIF_FILE}" ]; then
+  FINDINGS=$(python3 -c "import json; d=json.load(open('${SARIF_FILE}')); print(len(d.get('runs',[{}])[0].get('results',[])))")
+  CRITICAL=$(python3 -c "import json; d=json.load(open('${SARIF_FILE}')); print(sum(1 for r in d.get('runs',[{}])[0].get('results',[]) if r.get('level')=='error'))")
+  echo "findings_count=${FINDINGS}" >> $GITHUB_OUTPUT
+  echo "critical_count=${CRITICAL}" >> $GITHUB_OUTPUT
+  echo "sarif_file=${SARIF_FILE}" >> $GITHUB_OUTPUT
+fi
+
+# Fail if configured and findings exist
+if [ "${INPUT_FAIL_ON_FINDINGS}" = "true" ] && [ "${FINDINGS:-0}" -gt "0" ]; then
+  echo "::error::Dev Trust Scanner found ${FINDINGS} findings"
+  exit 1
+fi
+
+exit 0
+```
+
+**Customer Workflow Example** (what they copy into their repo):
+
+```yaml
+# .github/workflows/dev-trust-scan.yml
+name: Dev Trust Scanner
+on:
+  pull_request:
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+      - '.vscode/tasks.json'
+      - '.github/workflows/**'
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly Monday 6am
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write  # Required for SARIF upload
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Dev Trust Scanner
+        id: scan
+        uses: ymlsurgeon/dev-trust-scanner-action@v1
+        with:
+          webhook_url: ${{ secrets.DTS_WEBHOOK_URL }}
+          tenant_id: "customer-acme-corp"
+          severity_threshold: "medium"
+
+      - name: Upload SARIF to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.scan.outputs.sarif_file }}
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Dev Trust Scanner Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Total findings: ${{ steps.scan.outputs.findings_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Critical findings: ${{ steps.scan.outputs.critical_count }}" >> $GITHUB_STEP_SUMMARY
+```
+
+**Tests for the Action**:
+
+- Self-test workflow in the action repo that runs against a test fixture repo
+- Test with webhook (use a mock endpoint or webhook.site in testing)
+- Test SARIF upload to GitHub code scanning
+- Test `fail_on_findings` behavior
 
 ---
 
 ## Implementation Sequence
 
-> **Follow this exact sequence. Do not skip ahead. Commit after each step.**
+### Step 1: Webhook Module
 
-### Step 1: GitHub Actions Plugin Scaffolding
+**Scope**: `webhook.py` + CLI integration + tests
 
-Create the plugin directory structure, empty `scanner.py` with the plugin interface stubs, empty `gha_rules.yaml`, and `__init__.py`. Register the plugin with the orchestrator. Verify the scanner recognizes the new plugin (runs without errors, reports zero findings).
+**Files to create**:
+- `src/dev_trust_scanner/core/webhook.py`
 
-**Commit**: `feat(gha-plugin): scaffold GitHub Actions plugin with interface stubs`
+**Files to modify**:
+- `src/dev_trust_scanner/cli.py` — add `--webhook-url` and `--tenant-id` options
+- `src/dev_trust_scanner/core/reporting.py` — add tenant metadata to SARIF properties bag
 
-**Checkpoint**: Run full test suite — all 146 existing tests must pass. New plugin loads without error.
+**Files to create (tests)**:
+- `tests/test_webhook.py`
+- `tests/test_tenant_metadata.py`
 
-### Step 2: GitHub Actions Detection Rules (DEC-P2-002)
+**Acceptance criteria**:
+- `dev-trust-scan . --format sarif --webhook-url http://localhost:8080/test` sends SARIF via POST
+- `dev-trust-scan . --format sarif --tenant-id acme` includes `tenantId` in SARIF properties
+- Both flags together work correctly
+- Webhook failure does not block normal output
+- All existing tests still pass
 
-Implement the workflow injection detection rules in `gha_rules.yaml` and wire up `scanner.py` to evaluate them. Start with known malicious filename detection, then add pattern-based rules.
+**Commit**: `feat(core): add webhook delivery and tenant-id tagging`
 
-**Commit**: `feat(gha-plugin): implement workflow injection detection rules`
+### Step 2: End-to-End Validation
 
-**Checkpoint**: New tests for each GHA rule. Existing tests still pass. Run against sample legitimate workflow files to verify zero false positives.
+**Scope**: Manual and automated integration testing
 
-### Step 3: Self-hosted Runner Rules in GitHub Actions Plugin (DEC-P2-006, GHA portion)
+**Tasks**:
+- Create a test fixture directory with known-malicious patterns (reuse existing test fixtures)
+- Run full CLI with both new flags against fixtures
+- Verify SARIF output structure matches GitHub code scanning expectations
+- Verify webhook POST body is valid SARIF with tenant metadata
+- Run full test suite — confirm zero regressions
 
-Add runner installation detection rules to `gha_rules.yaml`. These are specific to workflow file context.
+**Commit**: `test(core): add integration tests for webhook and tenant-id`
 
-**Commit**: `feat(gha-plugin): add self-hosted runner installation detection`
+### Step 3: GitHub Action Repository (separate repo)
 
-**Checkpoint**: Tests cover runner patterns in workflow files. False positive check against legitimate runner setup documentation.
+**Scope**: Create `ymlsurgeon/dev-trust-scanner-action` repository
 
-### Step 4: TruffleHog Binary Download Rules (DEC-P2-001)
+**Tasks**:
+- Create repo structure (action.yml, Dockerfile, entrypoint.sh, README)
+- Create self-test workflow
+- Test against a fixture repo with deliberately suspicious files
+- Write README with usage examples for MDR customers
 
-Add TruffleHog detection rules to `npm_rules.yaml`. Implement in the npm_lifecycle plugin.
+**Commits**:
+- `feat: initial GitHub Action with Docker packaging`
+- `test: add self-test workflow with fixture repo`
+- `docs: add README with customer onboarding guide`
 
-**Commit**: `feat(npm-plugin): add TruffleHog binary download detection`
+### Step 4: Proof-of-Concept Test
 
-**Checkpoint**: Tests with Shai-Hulud-style fixtures. Validate against top 100 npm packages.
+**Scope**: Full end-to-end test in a real repo
 
-### Step 5: Webhook.site Exfiltration Rules (DEC-P2-005)
+**Tasks**:
+- Create a throwaway test repo with:
+  - Suspicious `package.json` (preinstall script curling a binary)
+  - Malicious `.vscode/tasks.json` (runOn: folderOpen with curl | sh)
+  - Suspicious `.github/workflows/` file (if GHA plugin is ready)
+- Add the scanner workflow file
+- Point webhook at webhook.site (or Sumo Logic free tier) to see raw SARIF arrive
+- Open a PR and verify:
+  - Scanner runs in GitHub Actions
+  - Findings appear as inline annotations on the PR (via SARIF upload)
+  - SARIF arrives at webhook endpoint with tenant metadata
+  - PR summary step shows finding counts
 
-Add webhook exfiltration detection rules to `npm_rules.yaml`. Include obfuscated domain patterns.
-
-**Commit**: `feat(npm-plugin): add webhook.site exfiltration detection`
-
-**Checkpoint**: Tests with various exfiltration patterns. Validate no false positives on webhook documentation packages.
-
-### Step 6: Repository Creation Markers (DEC-P2-003)
-
-Add campaign marker string detection rules to `npm_rules.yaml`.
-
-**Commit**: `feat(npm-plugin): add campaign marker string detection`
-
-**Checkpoint**: Tests for each marker string. Validate no false positives on Dune-related content or legitimate migration packages.
-
-### Step 7: Docker Privilege Escalation Rules (DEC-P2-004)
-
-Add Docker socket and privilege escalation rules to `npm_rules.yaml`.
-
-**Commit**: `feat(npm-plugin): add Docker privilege escalation detection`
-
-**Checkpoint**: Tests for Docker patterns. Document false positive expectations for Docker ecosystem packages.
-
-### Step 8: Self-hosted Runner Rules in npm Plugin (DEC-P2-006, npm portion)
-
-Add runner installation detection to `npm_rules.yaml` for lifecycle script context.
-
-**Commit**: `feat(npm-plugin): add self-hosted runner installation detection in lifecycle scripts`
-
-**Checkpoint**: Tests for runner patterns in postinstall/preinstall scripts.
-
-### Step 9: Preinstall Timing Analysis (DEC-P2-007)
-
-Implement preinstall risk escalation logic. This may require scanner-level logic beyond YAML pattern matching — if `preinstall` is detected, escalate severity of co-occurring findings.
-
-**Commit**: `feat(npm-plugin): add preinstall timing risk analysis`
-
-**Checkpoint**: Tests comparing severity levels. Validate against packages with legitimate preinstall usage.
-
-### Step 10: Integration Testing & Documentation
-
-- Run full test suite — target > 90% coverage
-- Scan a set of known-good npm packages — document any false positives
-- Update README with new plugin and rule documentation
-- Update this decisions.md with any implementation notes or deviations
-
-**Commit**: `docs: update README and decisions.md for Phase 2 capabilities`
-
-**Checkpoint**: All tests pass, coverage > 90%, README reflects current capabilities.
+**This is not committed to the scanner repo — it's a separate test repo.**
 
 ---
 
-## Rule Quality Standards
+## Constraints
 
-All new rules MUST meet:
-
-- **False positive rate**: < 1% when scanned against top 100 popular npm packages
-- **Severity assignment**: CRITICAL, HIGH, MEDIUM, or LOW — justified in the rule decision
-- **Actionable remediation**: Every finding includes clear guidance for the developer
-- **Performance**: No single rule should add more than 100ms to scan time
-- **Test coverage**: At least one malicious fixture and one benign fixture per rule
+- **No new dependencies.** `urllib.request` for HTTP. No `requests`, `httpx`, `aiohttp`.
+- **Webhook is fire-and-forget.** Never fail the scan because the webhook is down.
+- **SARIF format must remain GitHub-compatible.** Test with `github/codeql-action/upload-sarif` to confirm.
+- **The GitHub Action repo is separate from the scanner repo.** The action wraps the scanner — it doesn't contain scanner logic.
+- **Action must work with the scanner as-is.** If the scanner CLI doesn't support something the action needs, fix the scanner CLI first.
 
 ---
 
-## Validation Requirements
+## What NOT to Build
 
-For each new rule:
-
-1. **Malicious fixture**: Realistic test case based on published threat intelligence
-2. **Benign fixture**: Known-good configuration that must NOT trigger the rule
-3. **Top 100 validation**: Scan against top 100 popular npm packages — document results
-4. **Edge cases**: Document known edge cases and decisions made about them
-
----
-
-## Threat Intelligence Sources
-
-Rules in this phase are informed by:
-
-- Shai-Hulud npm worm campaign (TruffleHog, workflow injection, runner abuse, campaign markers)
-- Contagious Interview VS Code campaign (existing Phase 1 rules cover this)
-- Published reports from: ReversingLabs, Wiz Security, GitLab Security, Unit 42, Sonatype
-
----
-
-## Existing Constraints (Carried from Phase 1)
-
-These constraints remain in full effect:
-
-- **No network calls.** This tool is offline-only. No fetching, no phoning home, no update checks.
-- **Do not use `print()`.** Use `logging` or `rich.console`.
-- **Do not use `Any` type hints** unless there is a concrete, documented reason.
-- **Do not create god classes.** If a class is doing more than one thing, split it.
-- **Do not write plugins longer than 300 lines.** Move shared logic to `static_analysis.py`.
-- **Do not change the plugin interface** (`scan`, `get_metadata`, `get_supported_files`) without approval.
-- **Do not auto-generate rules.** Every detection rule must be intentional and documented with a rationale.
-- **Do not silence exceptions.** Catch them, log them, and include them in scan results per DEC-009.
-- **Do not refactor decisions.md** unless explicitly asked to.
-
----
-
-## When to Stop and Ask
-
-### Design questions
-
-- If a rule's pattern matching is ambiguous — stop and ask
-- If a rule needs logic beyond YAML pattern matching — describe the approach and wait for approval
-- If the GitHub Actions plugin needs to deviate from the existing plugin interface — stop and ask
-
-### Test failures
-
-- If tests fail because the design doesn't work as expected — stop and explain
-- Never delete or skip a failing test to move forward
-
-### False positive concerns
-
-- If a rule triggers on a popular legitimate package — stop and report which package and why
-- Propose pattern refinement before proceeding
-
-### Scope creep
-
-- If implementing a rule naturally leads to wanting multi-file correlation — stop. That's deferred.
-- If implementing a rule naturally leads to wanting typosquatting detection — stop. That's deferred.
-- Stay within the 7 defined rules and the GitHub Actions plugin.
+- **No authentication/token management.** Webhook URLs contain their own tokens (Sumo Logic HTTP source pattern). No OAuth, no API key management.
+- **No retry logic.** v1 is fire-and-forget. Retry can come later if needed.
+- **No webhook batching.** One POST per scan run.
+- **No custom SARIF transformations.** The MDR SIEM parses standard SARIF. Don't build a translation layer.
+- **No GitHub App.** The Action uses `github_token` from the workflow. No GitHub App registration, no OAuth flows.
+- **No PyPI publishing yet.** The Dockerfile installs from source. PyPI publishing is a separate task.
 
 ---
 
@@ -463,22 +400,10 @@ These constraints remain in full effect:
 
 ```
 type(scope): short description
-
-[optional body with context]
 ```
 
 **Types**: `feat`, `fix`, `test`, `docs`, `refactor`, `chore`
-**Scopes**: `core`, `npm-plugin`, `vscode-plugin`, `gha-plugin`, `cli`, `docs`
-
-**Examples**:
-
-```
-feat(gha-plugin): scaffold GitHub Actions plugin with interface stubs
-feat(gha-plugin): implement workflow injection detection rules
-feat(npm-plugin): add TruffleHog binary download detection
-test(gha-plugin): add false positive validation for legitimate workflows
-docs: update README and decisions.md for Phase 2 capabilities
-```
+**Scopes**: `core`, `cli`, `action`, `docs`
 
 ---
 
@@ -495,110 +420,14 @@ After completing each step, provide:
 
 ## Success Criteria
 
-Phase 2 is complete when:
+This build is complete when:
 
-- [ ] All 7 detection rules implemented and tested
-- [ ] GitHub Actions plugin operational as first-class scanner
-- [ ] Test coverage > 90%
-- [ ] Zero regressions on existing 146 tests
-- [ ] Each rule validated against known-good packages
-- [ ] README updated with new capabilities
-- [ ] This document updated with implementation notes
----
-
-## Phase 2 Implementation Notes
-
-**Completed:** 2025-02-12
-
-### Implementation Summary
-
-Phase 2 successfully delivered:
-- **GitHub Actions plugin** as a first-class scanner (npm-lifecycle, vscode-tasks, github-actions)
-- **12 new npm detection rules** (NPM-008 through NPM-019)
-- **7 GitHub Actions detection rules** (GHA-001 through GHA-007)
-- **Preinstall timing analysis** with automatic severity escalation
-- **209 tests passing** (160 Phase 1 + 49 Phase 2), **92% coverage**
-
-### Detection Capabilities Added
-
-**Shai-Hulud Worm Campaign:**
-- NPM-008/009: TruffleHog binary download and execution
-- NPM-010/011: Webhook.site exfiltration (plain and obfuscated)
-- NPM-012/013: Campaign marker strings (Shai-Hulud, Goldox-T3chs)
-- GHA-001: Known malicious workflow markers
-
-**GitHub Actions Workflows:**
-- GHA-002: Suspicious trigger combinations (persistence)
-- GHA-003: External script downloads (curl | bash)
-- GHA-004: Environment variable/secret dumping
-- GHA-005: Self-hosted runner usage
-- GHA-006/007: Runner registration and service installation
-
-**Container Escapes & Privilege Escalation:**
-- NPM-014: Docker socket access
-- NPM-015: Privileged container capabilities
-- NPM-016: Container escape techniques (nsenter, chroot)
-
-**Persistence Mechanisms:**
-- NPM-017/018: GitHub Actions runner installation in npm scripts
-- GHA-006/007: Runner installation in workflows
-
-**Preinstall Risk Analysis:**
-- NPM-019: Automatic finding when preinstall has suspicious patterns
-- Severity escalation: HIGH → CRITICAL, MEDIUM → HIGH for preinstall scripts
-
-### Architecture Decisions
-
-1. **GitHub Actions plugin structure**: Mirrors npm_lifecycle and vscode_tasks for consistency
-2. **Preinstall escalation**: Implemented in scanner logic (not YAML) due to conditional severity modification
-3. **Campaign marker detection**: Used keyword matching (simple, fast, high confidence)
-4. **NPM-019**: Applied programmatically, not in rules YAML (no pattern/keyword)
-5. **Rule naming**: NPM-XXX for npm plugin, GHA-XXX for GitHub Actions plugin
-
-### False Positive Analysis
-
-**Validated against top npm packages (react, lodash, express, axios, webpack):**
-- TruffleHog rules (NPM-008/009): 0% FP rate
-- Webhook rules (NPM-010/011): <0.1% FP rate
-- Docker rules (NPM-014/015/016): ~3% FP rate (Docker ecosystem packages, documented as acceptable tradeoff)
-- Campaign markers (NPM-012/013): <0.1% FP rate (may trigger on Dune references, acceptable given specificity)
-
-**GitHub Actions:**
-- Workflow injection rules: 0% FP rate on standard CI/CD workflows
-- Runner rules: 0% FP rate (runner setup docs are not workflow files)
-- Secret handling rules (GHA-004): Low FP rate (many legitimate workflows access secrets)
-
-### Test Coverage
-
-- **Total tests**: 209
-- **Coverage**: 92%
-- **Test breakdown**:
-  - Phase 1 tests: 160 (all passing)
-  - Phase 2 npm tests: 20 (TestShaHuludPatterns, TestDockerEscalation, TestRunnerInstallation, TestPreinstallEscalation)
-  - Phase 2 GHA tests: 20 (TestGitHubActionsPlugin)
-  - Integration tests: 9 (TestPhase2Integration)
-
-### Known Limitations
-
-1. **Campaign marker keywords**: Will match "Shai-Hulud" even in comments/docs (acceptable for security tool)
-2. **Docker tooling**: ~3% false positive rate on Docker ecosystem packages (documented tradeoff)
-3. **Preinstall escalation**: Only applies to lifecycle scripts, not to referenced .js files
-4. **GHA-004 (secret handling)**: May flag legitimate workflows that properly use secrets
-
-### Future Enhancements (Out of Scope for Phase 2)
-
-- Sample corpus testing framework
-- Typosquatting detection
-- Multi-file correlation logic
-- Automated sample fetching from opensourcemalware.com
-- Git hooks plugin
-- PyPI lifecycle scripts plugin
-
-### Implementation Deviations
-
-**None.** Phase 2 was implemented exactly as specified in the plan.
-
----
-
-*Last updated: 2025-02-12*
-*Phase 2 Status: Complete ✅*
+- [ ] `--webhook-url` flag sends SARIF via HTTP POST
+- [ ] `--tenant-id` flag injects metadata into SARIF properties and webhook headers
+- [ ] Webhook failure does not block scan output
+- [ ] GitHub Action repo exists with working action.yml, Dockerfile, entrypoint.sh
+- [ ] Customer workflow example tested end-to-end in a real repo
+- [ ] PR annotations appear via GitHub SARIF upload
+- [ ] SARIF arrives at webhook endpoint with tenant metadata
+- [ ] All existing tests pass (zero regressions)
+- [ ] README updated in both repos
