@@ -207,10 +207,18 @@ class SarifReporter:
 
     def _finding_to_sarif(self, finding) -> dict:
         """Convert Finding to SARIF result object."""
+        region: dict = {"startLine": finding.line_number or 1}
+        if finding.matched_content:
+            region["snippet"] = {"text": finding.matched_content}
+
+        message = finding.description
+        if finding.matched_content:
+            message = f"{finding.description}\nMatched: {finding.matched_content}"
+
         return {
             "ruleId": finding.rule_id,
             "level": self._severity_to_sarif_level(finding.severity),
-            "message": {"text": finding.description},
+            "message": {"text": message},
             "locations": [
                 {
                     "physicalLocation": {
@@ -218,7 +226,7 @@ class SarifReporter:
                             "uri": str(finding.file_path),
                             "uriBaseId": "%SRCROOT%",
                         },
-                        "region": {"startLine": finding.line_number or 1},
+                        "region": region,
                     }
                 }
             ],
