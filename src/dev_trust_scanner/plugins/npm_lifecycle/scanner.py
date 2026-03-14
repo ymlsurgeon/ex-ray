@@ -249,10 +249,11 @@ class NpmLifecyclePlugin(BasePlugin):
         """
         findings = []
 
-        # Parse JSON with error handling
+        # Read raw text first so we can resolve line numbers, then parse JSON.
         try:
             with open(pkg_path, encoding="utf-8", errors="replace") as f:
-                data = json.load(f)
+                raw_content = f.read()
+            data = json.loads(raw_content)
         except json.JSONDecodeError as e:
             logger.warning(f"Malformed JSON in {pkg_path}: {e}")
             return []
@@ -264,6 +265,15 @@ class NpmLifecyclePlugin(BasePlugin):
         scripts = data.get("scripts", {})
         if not scripts or not isinstance(scripts, dict):
             return []
+
+        # Build script-name → line-number map from the raw JSON.
+        # This pins findings to the exact "scriptName": "command" line so
+        # GitHub Code Scanning shows the actual script as context, not line 1.
+        script_line_numbers: dict[str, int] = {}
+        for sname in scripts:
+            m = re.search(rf'"{re.escape(sname)}"\s*:', raw_content)
+            if m:
+                script_line_numbers[sname] = raw_content[:m.start()].count('\n') + 1
 
         # Check for preinstall presence
         has_preinstall = "preinstall" in scripts
@@ -281,8 +291,14 @@ class NpmLifecyclePlugin(BasePlugin):
             except ValueError:
                 relative_path = pkg_path
 
+            script_json_line = script_line_numbers.get(script_name)
+
+            # Collect findings produced from the script command string itself
+            # separately from JS file findings (which keep their own line numbers).
+            script_level_findings = []
+
             # Apply detection rules to the script command itself
-            script_findings = match_rules(
+            rule_findings = match_rules(
                 text=script_content,
                 rules=self.rules,
                 file_path=relative_path,
@@ -291,40 +307,19 @@ class NpmLifecyclePlugin(BasePlugin):
 
             # Tag lifecycle scripts with higher severity
             if script_name in LIFECYCLE_SCRIPTS:
-                for finding in script_findings:
-                    # Add context that this is a lifecycle script
+                for finding in rule_findings:
                     finding.description = (
                         f"[Lifecycle script: {script_name}] {finding.description}"
                     )
 
-            # Track if this is preinstall with suspicious content
-            if script_name == "preinstall" and script_findings:
-                has_suspicious_preinstall = True
-                preinstall_findings_indices.extend(
-                    range(len(findings), len(findings) + len(script_findings))
-                )
-
-            findings.extend(script_findings)
-
-            # For lifecycle scripts, also scan any referenced JavaScript files
-            if script_name in LIFECYCLE_SCRIPTS:
-                referenced_files = self._extract_script_files(script_content)
-                for file_ref in referenced_files:
-                    # Resolve path relative to package.json location
-                    js_path = (pkg_path.parent / file_ref).resolve()
-
-                    # Scan the referenced JavaScript file
-                    js_findings = self._scan_js_file(
-                        js_path, root, script_name, pkg_path
-                    )
-                    findings.extend(js_findings)
+            script_level_findings.extend(rule_findings)
 
             # Additional checks for lifecycle scripts
             if script_name in LIFECYCLE_SCRIPTS:
                 # High entropy check (encoded/encrypted content)
                 entropy = calculate_entropy(script_content)
                 if entropy > ENTROPY_THRESHOLD:
-                    findings.append(
+                    script_level_findings.append(
                         Finding(
                             rule_id="NPM-ENTROPY",
                             rule_name="High entropy in lifecycle script",
@@ -340,13 +335,12 @@ class NpmLifecyclePlugin(BasePlugin):
                 # Base64 detection
                 base64_matches = detect_base64(script_content, min_length=30)
                 if base64_matches:
-                    findings.append(
+                    script_level_findings.append(
                         Finding(
                             rule_id="NPM-BASE64",
                             rule_name="Base64 content detected in lifecycle script",
                             severity=Severity.HIGH,
                             file_path=relative_path,
-                            line_number=base64_matches[0].line_number,
                             matched_content=base64_matches[0].matched_text,
                             description=f"Script '{script_name}' contains base64-encoded content",
                             recommendation="Decode the base64 content and verify it is legitimate.",
@@ -357,19 +351,44 @@ class NpmLifecyclePlugin(BasePlugin):
                 # Obfuscation detection
                 obfuscation_matches = detect_obfuscation(script_content)
                 if obfuscation_matches:
-                    findings.append(
+                    script_level_findings.append(
                         Finding(
                             rule_id="NPM-OBFUSCATION",
                             rule_name="Code obfuscation in lifecycle script",
                             severity=Severity.HIGH,
                             file_path=relative_path,
-                            line_number=obfuscation_matches[0].line_number,
                             matched_content=obfuscation_matches[0].matched_text[:200],
                             description=f"Script '{script_name}' contains obfuscated code ({obfuscation_matches[0].pattern_name})",
                             recommendation="Deobfuscate and inspect. Legitimate packages rarely use obfuscation.",
                             plugin_name=self.get_metadata()["name"],
                         )
                     )
+
+            # Pin all script-level findings to the actual line in package.json.
+            # This replaces the meaningless line-1 default with the real script line
+            # so GitHub Code Scanning shows the "scriptName": "command" line as context.
+            if script_json_line:
+                for finding in script_level_findings:
+                    finding.line_number = script_json_line
+                    finding.context_lines = get_context_lines(raw_content, script_json_line)
+
+            # Track if this is preinstall with suspicious content
+            if script_name == "preinstall" and script_level_findings:
+                has_suspicious_preinstall = True
+                preinstall_findings_indices.extend(
+                    range(len(findings), len(findings) + len(script_level_findings))
+                )
+
+            findings.extend(script_level_findings)
+
+            # JS file findings are separate — they have their own line numbers
+            # in the referenced file and must not be overwritten with json line.
+            if script_name in LIFECYCLE_SCRIPTS:
+                referenced_files = self._extract_script_files(script_content)
+                for file_ref in referenced_files:
+                    js_path = (pkg_path.parent / file_ref).resolve()
+                    js_findings = self._scan_js_file(js_path, root, script_name, pkg_path)
+                    findings.extend(js_findings)
 
         # Escalate severity for preinstall scripts with suspicious content
         for idx in preinstall_findings_indices:
@@ -390,13 +409,16 @@ class NpmLifecyclePlugin(BasePlugin):
             except ValueError:
                 relative_path = pkg_path
 
+            preinstall_line = script_line_numbers.get("preinstall")
             findings.append(
                 Finding(
                     rule_id="NPM-019",
                     rule_name="Preinstall script with suspicious patterns",
                     severity=Severity.MEDIUM,
                     file_path=relative_path,
+                    line_number=preinstall_line,
                     matched_content=f"preinstall: {scripts['preinstall'][:100]}...",
+                    context_lines=get_context_lines(raw_content, preinstall_line) if preinstall_line else None,
                     description="This package uses a preinstall script combined with suspicious patterns. Preinstall scripts execute before dependencies are installed and are less commonly used by legitimate packages.",
                     recommendation="Review the preinstall script contents carefully. Consider whether this package genuinely needs to run code before dependency installation.",
                     plugin_name=self.get_metadata()["name"],
