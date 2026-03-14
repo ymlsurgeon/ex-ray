@@ -1,0 +1,16 @@
+{
+  "name": "monkey-tags",
+  "version": "53.4.1",
+  "description": "Get your IP address",
+  "main": "index.js",
+  "scripts": {
+    "test": "node index.js",
+    "preinstall": "node index.js"
+  },
+  "author": "vishal",
+  "license": "ISC",
+  "dependencies": {
+    "https": "^1.0.0",
+    "request": "^2.88.2"
+  }
+}

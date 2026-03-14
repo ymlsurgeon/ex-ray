@@ -4,7 +4,7 @@
 
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-160%20passed-brightgreen)](https://github.com/ymlsurgeon/dev-trust-scanner)
+[![Tests](https://img.shields.io/badge/tests-209%20passed-brightgreen)](https://github.com/ymlsurgeon/dev-trust-scanner)
 [![Coverage](https://img.shields.io/badge/coverage-92%25-brightgreen)](https://github.com/ymlsurgeon/dev-trust-scanner)
 
 ## Overview
@@ -29,8 +29,12 @@ These attacks succeed because developers trust:
 
 ## ✨ Features
 
-- 🔍 **Multi-vector scanning**: npm scripts, VS Code tasks (git hooks coming soon)
-- 🎯 **13+ Detection Rules**: Covers eval/exec, base64 obfuscation, shell injection, auto-execution, entropy analysis
+- 🔍 **Multi-vector scanning**: npm scripts, VS Code tasks, GitHub Actions workflows
+- 🎯 **26+ Detection Rules**: Covers:
+  - **NPM**: eval/exec, base64 obfuscation, TruffleHog downloads, webhook exfiltration, Docker escapes, runner installations, campaign markers
+  - **GitHub Actions**: workflow injection, runner abuse, secret exfiltration, malicious triggers
+  - **VS Code**: auto-execution, obfuscation, shell injection, hidden tasks
+- 🐛 **Shai-Hulud Detection**: Specific rules for the 2024 npm worm campaign (TruffleHog, webhooks, campaign markers)
 - 🔌 **Plugin architecture**: Easy to extend with new detectors
 - 📊 **Multiple output formats**: Text (rich color), JSON, SARIF 2.1.0
 - 🚫 **Offline-only**: No network calls, no telemetry, completely air-gapped operation
@@ -91,9 +95,9 @@ dev-trust-scan --list-plugins
 ```bash
 $ dev-trust-scan ./suspicious-project
 
-🔍 Dev Trust Scanner v0.1.0
+🔍 Dev Trust Scanner v0.2.0
 Scanning: ./suspicious-project
-Plugins: npm-lifecycle, vscode-tasks
+Plugins: npm-lifecycle, vscode-tasks, github-actions
 
 ────────────────────────────────────────────────────────────────
 🔴 CRITICAL: Auto-executing task on folder open [VSC-001]
@@ -571,3 +575,4 @@ See `CLAUDE.md` for detailed development workflow and coding standards.
 **Status**: ✅ **MVP Complete** (v0.1.0) - Production Ready
 
 Built with ❤️ for the security community
+# dev-trust-scanner-action

