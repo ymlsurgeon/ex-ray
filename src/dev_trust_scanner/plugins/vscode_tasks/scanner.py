@@ -13,6 +13,7 @@ from ...core.static_analysis import (
     calculate_entropy,
     detect_base64,
     detect_obfuscation,
+    get_context_lines,
     match_rules,
 )
 
@@ -188,19 +189,38 @@ class VsCodeTasksPlugin(BasePlugin):
         if not tasks or not isinstance(tasks, list):
             return []
 
+        # Build task-label → line-number map from the raw JSON text.
+        # Pins each task's findings to the "label": "..." line so GitHub Code
+        # Scanning shows the actual task block as context instead of line 1.
+        task_line_numbers: dict[str, int] = {}
+        for task in tasks:
+            if not isinstance(task, dict):
+                continue
+            label = task.get("label", "")
+            if label:
+                m = re.search(
+                    rf'"label"\s*:\s*"{re.escape(label)}"', raw_content
+                )
+                if m:
+                    task_line_numbers[label] = raw_content[:m.start()].count('\n') + 1
+
         # Analyze each task
         for task in tasks:
             if not isinstance(task, dict):
                 continue
 
             task_label = task.get("label", "unnamed")
+            task_json_line = task_line_numbers.get(task_label)
+
+            # Collect all findings for this task before pinning line numbers
+            task_findings = []
 
             # Critical check: auto-execution on folder open
             run_options = task.get("runOptions", {})
             if isinstance(run_options, dict):
                 run_on = run_options.get("runOn", "default")
                 if run_on == "folderOpen":
-                    findings.append(
+                    task_findings.append(
                         Finding(
                             rule_id="VSC-001",
                             rule_name="Auto-executing task on folder open",
@@ -216,24 +236,23 @@ class VsCodeTasksPlugin(BasePlugin):
             # Check command content
             command = task.get("command", "")
             if command and isinstance(command, str):
-                findings.extend(self._analyze_command(command, task_label, relative_path))
+                task_findings.extend(self._analyze_command(command, task_label, relative_path))
 
             # Check args array
             args = task.get("args", [])
             if args and isinstance(args, list):
                 for arg in args:
                     if isinstance(arg, str):
-                        findings.extend(self._analyze_command(arg, task_label, relative_path))
+                        task_findings.extend(self._analyze_command(arg, task_label, relative_path))
 
             # Check platform-specific commands (osx, linux, windows)
             for platform in ["osx", "linux", "windows"]:
                 if platform in task and isinstance(task[platform], dict):
                     platform_config = task[platform]
 
-                    # Check platform-specific command
                     platform_command = platform_config.get("command", "")
                     if platform_command and isinstance(platform_command, str):
-                        findings.extend(
+                        task_findings.extend(
                             self._analyze_command(
                                 platform_command,
                                 f"{task_label} ({platform})",
@@ -241,12 +260,11 @@ class VsCodeTasksPlugin(BasePlugin):
                             )
                         )
 
-                    # Check platform-specific args
                     platform_args = platform_config.get("args", [])
                     if platform_args and isinstance(platform_args, list):
                         for arg in platform_args:
                             if isinstance(arg, str):
-                                findings.extend(
+                                task_findings.extend(
                                     self._analyze_command(
                                         arg,
                                         f"{task_label} ({platform})",
@@ -258,7 +276,7 @@ class VsCodeTasksPlugin(BasePlugin):
             presentation = task.get("presentation", {})
             if isinstance(presentation, dict):
                 raw_task_str = json.dumps(presentation)
-                findings.extend(
+                task_findings.extend(
                     match_rules(
                         text=raw_task_str,
                         rules=self.rules,
@@ -266,6 +284,14 @@ class VsCodeTasksPlugin(BasePlugin):
                         plugin_name=self.get_metadata()["name"],
                     )
                 )
+
+            # Pin all findings for this task to the task's line in tasks.json
+            if task_json_line:
+                for finding in task_findings:
+                    finding.line_number = task_json_line
+                    finding.context_lines = get_context_lines(raw_content, task_json_line)
+
+            findings.extend(task_findings)
 
         return findings
 
