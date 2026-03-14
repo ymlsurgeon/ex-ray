@@ -191,9 +191,22 @@ class SarifReporter:
                 "defaultConfiguration": {
                     "level": self._severity_to_sarif_level(finding.severity),
                 },
+                "properties": {
+                    "security-severity": self._SECURITY_SEVERITY[finding.severity]
+                },
             })
 
         return rules
+
+    # Numeric scores used in rule.properties.security-severity.
+    # GitHub code scanning maps these to colored severity badges:
+    #   >= 9.0 → Critical, >= 7.0 → High, >= 4.0 → Medium, >= 0.1 → Low
+    _SECURITY_SEVERITY: dict = {
+        Severity.CRITICAL: 9.5,
+        Severity.HIGH: 8.0,
+        Severity.MEDIUM: 5.0,
+        Severity.LOW: 2.0,
+    }
 
     def _severity_to_sarif_level(self, severity: Severity) -> str:
         """Map Severity enum to SARIF level string."""
