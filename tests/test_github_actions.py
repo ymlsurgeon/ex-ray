@@ -4,8 +4,8 @@ import json
 import pytest
 from pathlib import Path
 
-from dev_trust_scanner.plugins.github_actions import GitHubActionsPlugin
-from dev_trust_scanner.core.models import Severity
+from exray.plugins.github_actions import GitHubActionsPlugin
+from exray.core.models import Severity
 
 
 class TestGitHubActionsPlugin:

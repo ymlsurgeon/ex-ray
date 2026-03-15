@@ -6,8 +6,8 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from dev_trust_scanner.cli import main
-from dev_trust_scanner.core.orchestrator import Orchestrator
+from exray.cli import main
+from exray.core.orchestrator import Orchestrator
 
 
 class TestEndToEnd:

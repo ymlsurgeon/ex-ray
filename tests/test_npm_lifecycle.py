@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from dev_trust_scanner.plugins.npm_lifecycle import NpmLifecyclePlugin
+from exray.plugins.npm_lifecycle import NpmLifecyclePlugin
 
 
 class TestNpmLifecyclePlugin:
@@ -410,7 +410,7 @@ class TestShaHuludPatterns:
 
         findings = plugin.scan(tmp_path)
         assert any(f.rule_id == "NPM-008" for f in findings)
-        from dev_trust_scanner.core.models import Severity
+        from exray.core.models import Severity
         assert any(f.severity == Severity.CRITICAL for f in findings)
 
     def test_trufflehog_execution(self, tmp_path):
@@ -467,7 +467,7 @@ class TestShaHuludPatterns:
 
         findings = plugin.scan(tmp_path)
         assert any(f.rule_id == "NPM-010" for f in findings)
-        from dev_trust_scanner.core.models import Severity
+        from exray.core.models import Severity
         assert any(f.severity == Severity.CRITICAL for f in findings)
 
     def test_requestbin_exfiltration(self, tmp_path):
@@ -537,7 +537,7 @@ class TestShaHuludPatterns:
 
         findings = plugin.scan(tmp_path)
         assert any(f.rule_id == "NPM-012" for f in findings)
-        from dev_trust_scanner.core.models import Severity
+        from exray.core.models import Severity
         assert any(f.severity == Severity.CRITICAL for f in findings)
 
     def test_goldox_marker(self, tmp_path):
@@ -600,7 +600,7 @@ class TestDockerEscalation:
 
         findings = plugin.scan(tmp_path)
         assert any(f.rule_id == "NPM-014" for f in findings)
-        from dev_trust_scanner.core.models import Severity
+        from exray.core.models import Severity
         assert any(f.severity == Severity.HIGH for f in findings)
 
     def test_privileged_container(self, tmp_path):
@@ -632,7 +632,7 @@ class TestDockerEscalation:
 
         findings = plugin.scan(tmp_path)
         assert any(f.rule_id == "NPM-016" for f in findings)
-        from dev_trust_scanner.core.models import Severity
+        from exray.core.models import Severity
         assert any(f.severity == Severity.CRITICAL for f in findings)
 
     def test_legitimate_docker_tool_false_positive(self, tmp_path):
@@ -678,7 +678,7 @@ class TestRunnerInstallation:
 
         findings = plugin.scan(tmp_path)
         assert any(f.rule_id == "NPM-017" for f in findings)
-        from dev_trust_scanner.core.models import Severity
+        from exray.core.models import Severity
         assert any(f.severity == Severity.CRITICAL for f in findings)
 
     def test_runner_service_persistence(self, tmp_path):

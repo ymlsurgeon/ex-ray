@@ -155,9 +155,9 @@ class SarifReporter:
         run: dict = {
             "tool": {
                 "driver": {
-                    "name": "Dev Trust Scanner",
+                    "name": "Ex-Ray",
                     "version": _VERSION,
-                    "informationUri": "https://github.com/ymlsurgeon/dev-trust-scanner",
+                    "informationUri": "https://github.com/ymlsurgeon/ex-ray",
                     "rules": self._build_rules_array(result),
                 }
             },

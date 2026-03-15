@@ -1,6 +1,6 @@
-# Dev Trust Scanner — CI/CD Integration Build Plan
+# Ex-Ray — CI/CD Integration Build Plan
 
-> **Purpose**: Implementation guide for Claude Code. This document defines the work to ship Dev Trust Scanner as a CI/CD-integrated tool that delivers SARIF findings to both GitHub code scanning and an MDR analyst pipeline via webhook.
+> **Purpose**: Implementation guide for Claude Code. This document defines the work to ship Ex-Ray as a CI/CD-integrated tool that delivers SARIF findings to both GitHub code scanning and an MDR analyst pipeline via webhook.
 >
 > **Prerequisite**: Phase 1 complete. Phase 2 detection rules may or may not be complete — this work is independent and can proceed in parallel.
 >
@@ -10,7 +10,7 @@
 
 ## Context
 
-Dev Trust Scanner currently runs as a local CLI tool producing SARIF, JSON, and text output to stdout or file. This build adds three capabilities:
+Ex-Ray currently runs as a local CLI tool producing SARIF, JSON, and text output to stdout or file. This build adds three capabilities:
 
 1. **Webhook delivery** — POST SARIF results to an HTTP endpoint (e.g., Sumo Logic collector)
 2. **Tenant tagging** — Inject customer metadata into SARIF so the MDR SIEM can route by customer
@@ -31,17 +31,17 @@ These three pieces close the loop between "scanner produces findings" and "MDR a
 **Specification**:
 
 ```
-dev-trust-scan /path/to/project --format sarif --webhook-url https://collectors.sumologic.com/receiver/v1/http/TOKEN
+exray /path/to/project --format sarif --webhook-url https://collectors.sumologic.com/receiver/v1/http/TOKEN
 ```
 
 **Implementation Requirements**:
 
-- New module: `src/dev_trust_scanner/core/webhook.py`
+- New module: `src/exray/core/webhook.py`
 - Single function: `post_sarif(url: str, sarif_data: dict, tenant_id: str | None, timeout: int = 30) -> bool`
 - Use `urllib.request` from stdlib — **no new dependencies** (no `requests`, no `httpx`)
 - HTTP POST with `Content-Type: application/json`
 - Include `X-Tenant-ID` header if tenant_id is provided
-- Include `User-Agent: dev-trust-scanner/{version}` header
+- Include `User-Agent: ex-ray/{version}` header
 - Return `True` on 2xx response, `False` otherwise
 - Log the HTTP status code and response body on failure
 - **Never raise on webhook failure** — scan results should still be written to stdout/file even if the webhook POST fails. Webhook is fire-and-forget with logging.
@@ -76,7 +76,7 @@ dev-trust-scan /path/to/project --format sarif --webhook-url https://collectors.
 **Specification**:
 
 ```
-dev-trust-scan /path/to/project --format sarif --tenant-id "acme-corp" --webhook-url https://...
+exray /path/to/project --format sarif --tenant-id "acme-corp" --webhook-url https://...
 ```
 
 **Implementation Requirements**:
@@ -122,16 +122,16 @@ dev-trust-scan /path/to/project --format sarif --tenant-id "acme-corp" --webhook
 
 ### DEC-CICD-003: GitHub Action Wrapper
 
-**Decision**: Create a GitHub Action that wraps the Dev Trust Scanner CLI for use in customer CI/CD pipelines.
+**Decision**: Create a GitHub Action that wraps the Ex-Ray CLI for use in customer CI/CD pipelines.
 
 **Rationale**: A pre-built GitHub Action reduces customer onboarding to copying a workflow file and adding one secret. This is the primary delivery mechanism for MDR customers.
 
-**Implementation**: This is a **separate repository** — `ymlsurgeon/dev-trust-scanner-action`
+**Implementation**: This is a **separate repository** — `ymlsurgeon/ex-ray-action`
 
 **Action Structure**:
 
 ```
-dev-trust-scanner-action/
+ex-ray-action/
 ├── action.yml              # GitHub Action metadata
 ├── Dockerfile              # Container action packaging
 ├── entrypoint.sh           # Thin shell wrapper
@@ -144,7 +144,7 @@ dev-trust-scanner-action/
 **action.yml**:
 
 ```yaml
-name: 'Dev Trust Scanner'
+name: 'Ex-Ray'
 description: 'Static analysis scanner for malicious patterns in developer tooling configurations'
 branding:
   icon: 'shield'
@@ -191,9 +191,9 @@ runs:
 
 ```dockerfile
 FROM python:3.12-slim
-COPY --from=ghcr.io/ymlsurgeon/dev-trust-scanner:latest /app /app
-# OR: pip install dev-trust-scanner (when published to PyPI)
-RUN pip install --no-cache-dir dev-trust-scanner
+COPY --from=ghcr.io/ymlsurgeon/ex-ray:latest /app /app
+# OR: pip install ex-ray (when published to PyPI)
+RUN pip install --no-cache-dir ex-ray
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
@@ -208,10 +208,10 @@ set -e
 SCAN_PATH="${INPUT_SCAN_PATH:-.}"
 FORMAT="${INPUT_FORMAT:-sarif}"
 SEVERITY="${INPUT_SEVERITY_THRESHOLD:-LOW}"
-SARIF_FILE="/tmp/dev-trust-scanner-results.sarif"
+SARIF_FILE="/tmp/ex-ray-results.sarif"
 
 # Build command
-CMD="dev-trust-scan ${SCAN_PATH} --format ${FORMAT}"
+CMD="exray ${SCAN_PATH} --format ${FORMAT}"
 
 # Optional flags
 [ -n "${INPUT_WEBHOOK_URL}" ] && CMD="${CMD} --webhook-url ${INPUT_WEBHOOK_URL}"
@@ -222,7 +222,7 @@ CMD="dev-trust-scan ${SCAN_PATH} --format ${FORMAT}"
 CMD="${CMD} --output ${SARIF_FILE}"
 
 # Run scan
-echo "::group::Dev Trust Scanner"
+echo "::group::Ex-Ray"
 eval ${CMD}
 EXIT_CODE=$?
 echo "::endgroup::"
@@ -238,7 +238,7 @@ fi
 
 # Fail if configured and findings exist
 if [ "${INPUT_FAIL_ON_FINDINGS}" = "true" ] && [ "${FINDINGS:-0}" -gt "0" ]; then
-  echo "::error::Dev Trust Scanner found ${FINDINGS} findings"
+  echo "::error::Ex-Ray found ${FINDINGS} findings"
   exit 1
 fi
 
@@ -249,7 +249,7 @@ exit 0
 
 ```yaml
 # .github/workflows/dev-trust-scan.yml
-name: Dev Trust Scanner
+name: Ex-Ray
 on:
   pull_request:
     paths:
@@ -269,9 +269,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run Dev Trust Scanner
+      - name: Run Ex-Ray
         id: scan
-        uses: ymlsurgeon/dev-trust-scanner-action@v1
+        uses: ymlsurgeon/ex-ray-action@v1
         with:
           webhook_url: ${{ secrets.DTS_WEBHOOK_URL }}
           tenant_id: "customer-acme-corp"
@@ -286,7 +286,7 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          echo "### Dev Trust Scanner Results" >> $GITHUB_STEP_SUMMARY
+          echo "### Ex-Ray Results" >> $GITHUB_STEP_SUMMARY
           echo "- Total findings: ${{ steps.scan.outputs.findings_count }}" >> $GITHUB_STEP_SUMMARY
           echo "- Critical findings: ${{ steps.scan.outputs.critical_count }}" >> $GITHUB_STEP_SUMMARY
 ```
@@ -307,19 +307,19 @@ jobs:
 **Scope**: `webhook.py` + CLI integration + tests
 
 **Files to create**:
-- `src/dev_trust_scanner/core/webhook.py`
+- `src/exray/core/webhook.py`
 
 **Files to modify**:
-- `src/dev_trust_scanner/cli.py` — add `--webhook-url` and `--tenant-id` options
-- `src/dev_trust_scanner/core/reporting.py` — add tenant metadata to SARIF properties bag
+- `src/exray/cli.py` — add `--webhook-url` and `--tenant-id` options
+- `src/exray/core/reporting.py` — add tenant metadata to SARIF properties bag
 
 **Files to create (tests)**:
 - `tests/test_webhook.py`
 - `tests/test_tenant_metadata.py`
 
 **Acceptance criteria**:
-- `dev-trust-scan . --format sarif --webhook-url http://localhost:8080/test` sends SARIF via POST
-- `dev-trust-scan . --format sarif --tenant-id acme` includes `tenantId` in SARIF properties
+- `exray . --format sarif --webhook-url http://localhost:8080/test` sends SARIF via POST
+- `exray . --format sarif --tenant-id acme` includes `tenantId` in SARIF properties
 - Both flags together work correctly
 - Webhook failure does not block normal output
 - All existing tests still pass
@@ -341,7 +341,7 @@ jobs:
 
 ### Step 3: GitHub Action Repository (separate repo)
 
-**Scope**: Create `ymlsurgeon/dev-trust-scanner-action` repository
+**Scope**: Create `ymlsurgeon/ex-ray-action` repository
 
 **Tasks**:
 - Create repo structure (action.yml, Dockerfile, entrypoint.sh, README)

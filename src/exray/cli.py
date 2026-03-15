@@ -1,4 +1,4 @@
-"""Command-line interface for Dev Trust Scanner."""
+"""Command-line interface for Ex-Ray."""
 
 import logging
 from pathlib import Path
@@ -83,7 +83,7 @@ def _filter_by_severity(result: ScanResult, min_severity: str) -> ScanResult:
 )
 def main(target, plugin, format, output, webhook_url, tenant_id, severity, verbose, list_plugins):
     """
-    Dev Trust Scanner - Detect malicious patterns in developer tooling.
+    Ex-Ray - Detect malicious patterns in developer tooling.
 
     Scans TARGET directory for suspicious patterns in npm scripts,
     VS Code tasks, and other developer configurations.

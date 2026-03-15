@@ -4,8 +4,8 @@ import json
 import pytest
 from pathlib import Path
 
-from dev_trust_scanner.core.orchestrator import Orchestrator
-from dev_trust_scanner.core.models import Severity
+from exray.core.orchestrator import Orchestrator
+from exray.core.models import Severity
 
 
 class TestPhase2Integration:
@@ -116,8 +116,8 @@ jobs:
 
     def test_phase2_rules_count(self):
         """Test that Phase 2 added expected number of rules."""
-        from dev_trust_scanner.plugins.npm_lifecycle import NpmLifecyclePlugin
-        from dev_trust_scanner.plugins.github_actions import GitHubActionsPlugin
+        from exray.plugins.npm_lifecycle import NpmLifecyclePlugin
+        from exray.plugins.github_actions import GitHubActionsPlugin
 
         npm_plugin = NpmLifecyclePlugin()
         gha_plugin = GitHubActionsPlugin()

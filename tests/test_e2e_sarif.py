@@ -23,10 +23,10 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
-from dev_trust_scanner.cli import main
-from dev_trust_scanner.core.models import ScanResult
-from dev_trust_scanner.core.orchestrator import Orchestrator
-from dev_trust_scanner.core.reporting import SarifReporter
+from exray.cli import main
+from exray.core.models import ScanResult
+from exray.core.orchestrator import Orchestrator
+from exray.core.reporting import SarifReporter
 
 VALID_SARIF_LEVELS = {"error", "warning", "note", "none"}
 ISO8601_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
@@ -80,7 +80,7 @@ class TestSarifSchema:
     def test_tool_driver_name_present(self, contagious_interview_task):
         data = _run_scan(contagious_interview_task)
         driver = data["runs"][0]["tool"]["driver"]
-        assert driver["name"] == "Dev Trust Scanner"
+        assert driver["name"] == "Ex-Ray"
 
     def test_tool_driver_version_present(self, contagious_interview_task):
         data = _run_scan(contagious_interview_task)
@@ -252,7 +252,7 @@ class TestTenantEndToEnd:
             return True
 
         runner = CliRunner()
-        with patch("dev_trust_scanner.cli.post_sarif", side_effect=fake_post):
+        with patch("exray.cli.post_sarif", side_effect=fake_post):
             result = runner.invoke(
                 main,
                 [
@@ -278,7 +278,7 @@ class TestTenantEndToEnd:
             return True
 
         runner = CliRunner()
-        with patch("dev_trust_scanner.cli.post_sarif", side_effect=fake_post):
+        with patch("exray.cli.post_sarif", side_effect=fake_post):
             runner.invoke(
                 main,
                 [
@@ -305,7 +305,7 @@ class TestTenantEndToEnd:
             return True
 
         runner = CliRunner()
-        with patch("dev_trust_scanner.cli.post_sarif", side_effect=fake_post):
+        with patch("exray.cli.post_sarif", side_effect=fake_post):
             result = runner.invoke(
                 main,
                 [
@@ -334,7 +334,7 @@ class TestTenantEndToEnd:
         outfile = tmp_path / "results.sarif"
 
         runner = CliRunner()
-        with patch("dev_trust_scanner.cli.post_sarif", return_value=False):
+        with patch("exray.cli.post_sarif", return_value=False):
             result = runner.invoke(
                 main,
                 [

@@ -8,11 +8,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from dev_trust_scanner.core.webhook import post_sarif
+from exray.core.webhook import post_sarif
 
 SAMPLE_SARIF = {
     "version": "2.1.0",
-    "runs": [{"tool": {"driver": {"name": "Dev Trust Scanner"}}, "results": []}],
+    "runs": [{"tool": {"driver": {"name": "Ex-Ray"}}, "results": []}],
 }
 
 
@@ -134,7 +134,7 @@ class TestPostSarif:
         with patch("urllib.request.urlopen", side_effect=fake_urlopen):
             post_sarif("https://example.com/webhook", SAMPLE_SARIF)
 
-        assert "dev-trust-scanner" in captured_request["headers"].get("User-agent", "")
+        assert "ex-ray" in captured_request["headers"].get("User-agent", "")
 
     def test_includes_tenant_id_header_when_set(self):
         """X-Tenant-ID header is sent when tenant_id is provided."""

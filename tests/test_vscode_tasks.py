@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from dev_trust_scanner.plugins.vscode_tasks import VsCodeTasksPlugin
+from exray.plugins.vscode_tasks import VsCodeTasksPlugin
 
 
 class TestVsCodeTasksPlugin:

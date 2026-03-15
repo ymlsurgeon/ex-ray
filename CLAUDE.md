@@ -1,4 +1,4 @@
-# CLAUDE.md — Workflow Protocols for Dev Trust Scanner
+# CLAUDE.md — Workflow Protocols for Ex-Ray
 
 > **Read this file before every session.** This defines how you should behave during development — when to proceed, when to stop, and how to handle problems.
 > **Read `docs/decisions.md` before writing any code.** That file defines what we're building and why.
@@ -149,14 +149,14 @@ Run these before reporting a step as complete:
 pytest tests/ -v
 
 # No type errors (if mypy is configured)
-mypy src/dev_trust_scanner/
+mypy src/exray/
 
 # Check plugin LOC limits
-wc -l src/dev_trust_scanner/plugins/*/scanner.py
+wc -l src/exray/plugins/*/scanner.py
 # Each should be < 300 lines
 
 # Verify editable install works
-pip install -e . && dev-trust-scan --help
+pip install -e . && exray --help
 ```
 
 ---

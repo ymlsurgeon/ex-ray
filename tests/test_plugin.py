@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from dev_trust_scanner.core.models import Finding, Severity
-from dev_trust_scanner.core.plugin import BasePlugin
+from exray.core.models import Finding, Severity
+from exray.core.plugin import BasePlugin
 
 
 class TestBasePlugin:

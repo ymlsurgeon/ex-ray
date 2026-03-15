@@ -7,9 +7,9 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
-from dev_trust_scanner.cli import main
-from dev_trust_scanner.core.models import ScanResult, Severity
-from dev_trust_scanner.core.reporting import SarifReporter
+from exray.cli import main
+from exray.core.models import ScanResult, Severity
+from exray.core.reporting import SarifReporter
 
 
 def _make_scan_result(tmp_path: Path) -> ScanResult:
@@ -122,7 +122,7 @@ class TestCLITenantAndWebhook:
         """--webhook-url triggers post_sarif() when format is sarif."""
         runner = CliRunner()
 
-        with patch("dev_trust_scanner.cli.post_sarif", return_value=True) as mock_post:
+        with patch("exray.cli.post_sarif", return_value=True) as mock_post:
             result = runner.invoke(
                 main,
                 [
@@ -141,7 +141,7 @@ class TestCLITenantAndWebhook:
         """--tenant-id is forwarded to post_sarif()."""
         runner = CliRunner()
 
-        with patch("dev_trust_scanner.cli.post_sarif", return_value=True) as mock_post:
+        with patch("exray.cli.post_sarif", return_value=True) as mock_post:
             result = runner.invoke(
                 main,
                 [
@@ -160,7 +160,7 @@ class TestCLITenantAndWebhook:
         """Webhook failure does not prevent SARIF from being written to stdout."""
         runner = CliRunner()
 
-        with patch("dev_trust_scanner.cli.post_sarif", return_value=False):
+        with patch("exray.cli.post_sarif", return_value=False):
             result = runner.invoke(
                 main,
                 [
@@ -179,7 +179,7 @@ class TestCLITenantAndWebhook:
         """Webhook is not triggered when --format is json (sarif only)."""
         runner = CliRunner()
 
-        with patch("dev_trust_scanner.cli.post_sarif", return_value=True) as mock_post:
+        with patch("exray.cli.post_sarif", return_value=True) as mock_post:
             result = runner.invoke(
                 main,
                 [
@@ -229,7 +229,7 @@ class TestCLITenantAndWebhook:
         outfile = tmp_path / "results.sarif"
         runner = CliRunner()
 
-        with patch("dev_trust_scanner.cli.post_sarif", return_value=True) as mock_post:
+        with patch("exray.cli.post_sarif", return_value=True) as mock_post:
             result = runner.invoke(
                 main,
                 [

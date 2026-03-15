@@ -35,7 +35,7 @@ def post_sarif(
 
     headers = {
         "Content-Type": "application/json",
-        "User-Agent": f"dev-trust-scanner/{_VERSION}",
+        "User-Agent": f"ex-ray/{_VERSION}",
     }
     if tenant_id:
         headers["X-Tenant-ID"] = tenant_id

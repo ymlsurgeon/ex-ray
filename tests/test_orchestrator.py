@@ -1,6 +1,6 @@
 """Tests for orchestrator."""
 
-from dev_trust_scanner.core.orchestrator import Orchestrator
+from exray.core.orchestrator import Orchestrator
 
 
 class TestOrchestrator:

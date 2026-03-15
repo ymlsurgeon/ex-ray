@@ -3,14 +3,14 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "dev-trust-scanner"
+name = "ex-ray"
 version = "0.1.0"
 description = "Security scanner for detecting malicious patterns in developer tooling"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "Dev Trust Scanner", email = "noreply@example.com"}
+    {name = "Ex-Ray", email = "noreply@example.com"}
 ]
 keywords = ["security", "scanner", "npm", "vscode", "malware-detection", "supply-chain"]
 classifiers = [
@@ -36,17 +36,17 @@ dev = [
 ]
 
 [project.scripts]
-dev-trust-scan = "dev_trust_scanner.cli:main"
+exray = "exray.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-dev_trust_scanner = ["plugins/*/rules/*.yaml"]
+exray = ["plugins/*/rules/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --cov=dev_trust_scanner --cov-report=term-missing"
+addopts = "-v --cov=exray --cov-report=term-missing"

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from dev_trust_scanner.core.models import Finding, Match, Rule, ScanResult, Severity
+from exray.core.models import Finding, Match, Rule, ScanResult, Severity
 
 
 class TestSeverity:

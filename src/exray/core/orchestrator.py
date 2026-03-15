@@ -15,9 +15,9 @@ class Orchestrator:
 
     # Plugin registry (hardcoded for MVP)
     PLUGIN_REGISTRY = {
-        "npm-lifecycle": "dev_trust_scanner.plugins.npm_lifecycle",
-        "vscode-tasks": "dev_trust_scanner.plugins.vscode_tasks",
-        "github-actions": "dev_trust_scanner.plugins.github_actions",
+        "npm-lifecycle": "exray.plugins.npm_lifecycle",
+        "vscode-tasks": "exray.plugins.vscode_tasks",
+        "github-actions": "exray.plugins.github_actions",
     }
 
     def __init__(self):

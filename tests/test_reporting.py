@@ -5,8 +5,8 @@ from pathlib import Path
 
 from rich.console import Console
 
-from dev_trust_scanner.core.models import Finding, ScanResult, Severity
-from dev_trust_scanner.core.reporting import JsonReporter, SarifReporter, TextReporter
+from exray.core.models import Finding, ScanResult, Severity
+from exray.core.reporting import JsonReporter, SarifReporter, TextReporter
 
 
 class TestTextReporter:

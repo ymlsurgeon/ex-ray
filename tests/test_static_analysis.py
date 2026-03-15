@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from dev_trust_scanner.core.models import Rule, Severity
-from dev_trust_scanner.core.static_analysis import (
+from exray.core.models import Rule, Severity
+from exray.core.static_analysis import (
     calculate_entropy,
     check_ioc_patterns,
     detect_base64,

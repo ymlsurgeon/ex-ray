@@ -13,9 +13,9 @@ from typing import Any
 import logging
 import yaml
 
-from dev_trust_scanner.core.plugin import BasePlugin
-from dev_trust_scanner.core.models import Finding, Rule
-from dev_trust_scanner.core.static_analysis import match_rules
+from exray.core.plugin import BasePlugin
+from exray.core.models import Finding, Rule
+from exray.core.static_analysis import match_rules
 
 logger = logging.getLogger(__name__)
 
