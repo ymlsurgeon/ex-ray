@@ -82,7 +82,7 @@ pip install -e ".[dev]"
 pytest tests/ -v
 ```
 
-See `CLAUDE.md` for development workflow and coding standards.
+See `.claude/CLAUDE.md` for development workflow and coding standards.
 
 ---
 
