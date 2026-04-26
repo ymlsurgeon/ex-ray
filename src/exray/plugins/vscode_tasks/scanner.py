@@ -10,17 +10,19 @@ import yaml
 from ...core.models import Finding, Rule, Severity
 from ...core.plugin import BasePlugin
 from ...core.static_analysis import (
-    calculate_entropy,
     detect_base64,
-    detect_obfuscation,
     get_context_lines,
     match_rules,
+    run_content_checks,
 )
 
 logger = logging.getLogger(__name__)
 
 # Entropy threshold for detecting encoded/obfuscated content
 ENTROPY_THRESHOLD = 5.0  # Higher for tasks (often have long paths)
+
+# Legitimate file extensions for node/npx execution
+_JS_EXTENSIONS = {".js", ".mjs", ".cjs", ".ts", ".mts", ".cts", ".jsx", ".tsx"}
 
 
 class VsCodeTasksPlugin(BasePlugin):
@@ -40,8 +42,8 @@ class VsCodeTasksPlugin(BasePlugin):
 
             rules = []
             for rule_data in data.get("rules", []):
-                # Skip VSC-002 (obfuscation) as it's checked programmatically
-                if rule_data["id"] == "VSC-002":
+                # Skip rules checked programmatically in scanner methods
+                if rule_data["id"] in ("VSC-002", "VSC-007"):
                     continue
                 rules.append(Rule(**rule_data))
 
@@ -321,54 +323,70 @@ class VsCodeTasksPlugin(BasePlugin):
             )
         )
 
-        # Check for base64
-        base64_matches = detect_base64(command, min_length=30)
-        if base64_matches:
-            findings.append(
-                Finding(
-                    rule_id="VSC-002",
-                    rule_name="Base64 content in task command",
-                    severity=Severity.HIGH,
-                    file_path=file_path,
-                    matched_content=base64_matches[0].matched_text,
-                    description=f"Task '{task_label}' command contains base64-encoded content",
-                    recommendation="Decode and inspect the base64 content.",
-                    plugin_name=self.get_metadata()["name"],
-                )
+        # Base64, obfuscation, and entropy checks
+        findings.extend(
+            run_content_checks(
+                text=command,
+                file_path=file_path,
+                plugin_name=self.get_metadata()["name"],
+                label=f"Task '{task_label}'",
+                base64_min_length=30,
+                entropy_threshold=ENTROPY_THRESHOLD,
+                obfuscation_rule_id="VSC-002",
+                entropy_rule_id="VSC-ENTROPY",
             )
+        )
 
-        # Check for obfuscation
-        obfuscation_matches = detect_obfuscation(command)
-        if obfuscation_matches:
-            findings.append(
-                Finding(
-                    rule_id="VSC-002",
-                    rule_name="Obfuscated command in task",
-                    severity=Severity.HIGH,
-                    file_path=file_path,
-                    matched_content=obfuscation_matches[0].matched_text[:200],
-                    description=f"Task '{task_label}' contains obfuscated code ({obfuscation_matches[0].pattern_name})",
-                    recommendation="Deobfuscate and inspect. Obfuscation is highly suspicious.",
-                    plugin_name=self.get_metadata()["name"],
-                )
-            )
+        # File extension mismatch detection (Contagious Interview "Fake Font")
+        findings.extend(
+            self._check_node_extension_mismatch(command, task_label, file_path)
+        )
 
-        # Check entropy
-        entropy = calculate_entropy(command)
-        if entropy > ENTROPY_THRESHOLD:
-            findings.append(
-                Finding(
-                    rule_id="VSC-ENTROPY",
-                    rule_name="High entropy in task command",
-                    severity=Severity.HIGH,
-                    file_path=file_path,
-                    matched_content=command[:200],
-                    description=f"Task '{task_label}' has high entropy ({entropy}), may contain encoded content",
-                    recommendation="Decode and inspect the command.",
-                    plugin_name=self.get_metadata()["name"],
-                )
-            )
+        return findings
 
+    # Flags that take a value argument (next token is not a file path)
+    _NODE_VALUE_FLAGS = {"-e", "--eval", "-p", "--print", "-r", "--require", "-C", "--conditions"}
+
+    def _check_node_extension_mismatch(
+        self, command: str, task_label: str, file_path: Path
+    ) -> list[Finding]:
+        """Flag node/npx executing files with non-JavaScript extensions (VSC-007)."""
+        findings = []
+        for match in re.finditer(r"\b(?:node|npx)\s+(.*)", command):
+            tokens = match.group(1).split()
+            skip_next = False
+            for token in tokens:
+                if skip_next:
+                    skip_next = False
+                    continue
+                # Skip flags; flags taking a value consume the next token too
+                if token.startswith("-"):
+                    if token in self._NODE_VALUE_FLAGS:
+                        skip_next = True
+                    continue
+                ext = Path(token).suffix.lower()
+                if ext and ext not in _JS_EXTENSIONS:
+                    findings.append(
+                        Finding(
+                            rule_id="VSC-007",
+                            rule_name="Node.js executing non-JavaScript file",
+                            severity=Severity.CRITICAL,
+                            file_path=file_path,
+                            matched_content=f"node {token}",
+                            description=(
+                                f"Task '{task_label}' runs node on '{token}' "
+                                f"(extension: {ext}). This matches the DPRK Contagious "
+                                f"Interview 'Fake Font' attack pattern."
+                            ),
+                            recommendation=(
+                                "Inspect the file contents — it likely contains "
+                                "JavaScript despite its extension."
+                            ),
+                            plugin_name=self.get_metadata()["name"],
+                        )
+                    )
+                # Only check the first non-flag token (the file argument)
+                break
         return findings
 
     def _scan_raw_content(self, content: str, tasks_path: Path, root: Path) -> list[Finding]:

@@ -351,6 +351,83 @@ def match_rules(
     return findings
 
 
+def run_content_checks(
+    text: str,
+    file_path: Path,
+    plugin_name: str,
+    label: str = "",
+    base64_min_length: int = 30,
+    entropy_threshold: float = 4.5,
+    obfuscation_rule_id: str = "OBFUSCATION",
+    entropy_rule_id: str = "ENTROPY",
+) -> list[Finding]:
+    """
+    Run base64, obfuscation, and entropy checks on text.
+
+    Shared helper used by plugins that need dynamic content analysis
+    beyond YAML rule matching.
+
+    Args:
+        text: Text to analyze
+        file_path: Path to file being scanned (for Finding)
+        plugin_name: Name of plugin running the scan (for Finding)
+        label: Context label (e.g., "Task 'build'") for descriptions
+        base64_min_length: Minimum base64 string length to flag
+        entropy_threshold: Shannon entropy threshold for flagging
+        obfuscation_rule_id: Rule ID for base64/obfuscation findings
+        entropy_rule_id: Rule ID for entropy findings
+
+    Returns:
+        List of Finding objects for any detected issues
+    """
+    findings: list[Finding] = []
+    prefix = f"'{label}' " if label else ""
+
+    # Base64 check
+    base64_matches = detect_base64(text, min_length=base64_min_length)
+    if base64_matches:
+        findings.append(Finding(
+            rule_id=obfuscation_rule_id,
+            rule_name="Base64 content detected",
+            severity=Severity.HIGH,
+            file_path=file_path,
+            matched_content=base64_matches[0].matched_text,
+            description=f"{prefix}contains base64-encoded content",
+            recommendation="Decode and inspect the base64 content.",
+            plugin_name=plugin_name,
+        ))
+
+    # Obfuscation check
+    obfuscation_matches = detect_obfuscation(text)
+    if obfuscation_matches:
+        findings.append(Finding(
+            rule_id=obfuscation_rule_id,
+            rule_name="Obfuscated content detected",
+            severity=Severity.HIGH,
+            file_path=file_path,
+            matched_content=obfuscation_matches[0].matched_text[:200],
+            description=f"{prefix}contains obfuscated code ({obfuscation_matches[0].pattern_name})",
+            recommendation="Deobfuscate and inspect. Obfuscation is highly suspicious.",
+            plugin_name=plugin_name,
+        ))
+
+    # Entropy check
+    entropy = calculate_entropy(text)
+    if entropy > entropy_threshold:
+        findings.append(Finding(
+            rule_id=entropy_rule_id,
+            rule_name="High entropy content",
+            severity=Severity.HIGH,
+            file_path=file_path,
+            matched_content=text[:200],
+            description=f"{prefix}has high entropy ({entropy}), may contain encoded content",
+            recommendation="Decode and inspect the content.",
+            plugin_name=plugin_name,
+        ))
+
+    return findings
+
+
 def get_context_lines(content: str, line_number: int, window: int = 4) -> list[str]:
     """
     Return lines surrounding line_number (1-based), ±window lines.

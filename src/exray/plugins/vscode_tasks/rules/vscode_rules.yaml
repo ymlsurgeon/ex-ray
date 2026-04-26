@@ -61,3 +61,10 @@ rules:
       - '\$env:'
       - '\$[A-Z_][A-Z0-9_]*'
     recommendation: "Verify which environment variables are accessed. Be cautious of AWS_*, API_KEY, TOKEN, SECRET variables."
+
+  - id: "VSC-007"
+    name: "Node.js executing non-JavaScript file"
+    severity: "critical"
+    description: "A VS Code task runs Node.js against a file with a non-JavaScript extension. This is a signature technique of the DPRK Contagious Interview 'Fake Font' campaign, which disguises JavaScript malware as font files (.woff2, .ttf) or other binary formats."
+    # Checked programmatically in scanner.py, not via pattern matching
+    recommendation: "Inspect the file contents — it likely contains JavaScript despite its extension. This technique is used to evade casual code review. If the file contains obfuscated JavaScript, treat this as confirmed malware."

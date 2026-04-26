@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+from exray.core.models import Severity
 from exray.plugins.vscode_tasks import VsCodeTasksPlugin
 
 
@@ -257,3 +258,110 @@ class TestVsCodeTasksPlugin:
         # Should detect suspicious shell commands in platform-specific configs
         suspicious_findings = [f for f in findings if f.rule_id == "VSC-003"]
         assert len(suspicious_findings) >= 2  # At least curl|bash and wget|sh
+
+
+class TestNodeExtensionMismatch:
+    """Tests for VSC-007: Node.js executing non-JavaScript file."""
+
+    def _make_task(self, tmp_path, command):
+        """Helper: create tasks.json with a single task."""
+        vscode_dir = tmp_path / ".vscode"
+        vscode_dir.mkdir()
+        (vscode_dir / "tasks.json").write_text(
+            json.dumps({
+                "version": "2.0.0",
+                "tasks": [{"label": "test-task", "command": command}],
+            })
+        )
+
+    def test_node_woff2_triggers_vsc007(self, tmp_path):
+        """node executing .woff2 file triggers VSC-007 CRITICAL."""
+        self._make_task(tmp_path, "node public/fonts/fa-brands-regular.woff2")
+        plugin = VsCodeTasksPlugin()
+        findings = plugin.scan(tmp_path)
+        vsc007 = [f for f in findings if f.rule_id == "VSC-007"]
+        assert len(vsc007) == 1
+        assert vsc007[0].severity == Severity.CRITICAL
+
+    def test_node_png_triggers(self, tmp_path):
+        """node executing .png file triggers VSC-007."""
+        self._make_task(tmp_path, "node malware.png")
+        plugin = VsCodeTasksPlugin()
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "VSC-007" for f in findings)
+
+    def test_node_ttf_triggers(self, tmp_path):
+        """node executing .ttf file triggers VSC-007."""
+        self._make_task(tmp_path, "node payload.ttf")
+        plugin = VsCodeTasksPlugin()
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "VSC-007" for f in findings)
+
+    def test_node_exe_triggers(self, tmp_path):
+        """node executing .exe file triggers VSC-007."""
+        self._make_task(tmp_path, "node config.exe")
+        plugin = VsCodeTasksPlugin()
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "VSC-007" for f in findings)
+
+    def test_node_js_does_not_trigger(self, tmp_path):
+        """node executing .js file should NOT trigger VSC-007."""
+        self._make_task(tmp_path, "node ./scripts/setup.js")
+        plugin = VsCodeTasksPlugin()
+        findings = plugin.scan(tmp_path)
+        assert not any(f.rule_id == "VSC-007" for f in findings)
+
+    def test_node_mjs_does_not_trigger(self, tmp_path):
+        """node executing .mjs file should NOT trigger."""
+        self._make_task(tmp_path, "node app.mjs")
+        plugin = VsCodeTasksPlugin()
+        findings = plugin.scan(tmp_path)
+        assert not any(f.rule_id == "VSC-007" for f in findings)
+
+    def test_node_ts_does_not_trigger(self, tmp_path):
+        """node executing .ts file should NOT trigger."""
+        self._make_task(tmp_path, "node index.ts")
+        plugin = VsCodeTasksPlugin()
+        findings = plugin.scan(tmp_path)
+        assert not any(f.rule_id == "VSC-007" for f in findings)
+
+    def test_node_inline_eval_does_not_trigger(self, tmp_path):
+        """node -e 'code' should NOT trigger VSC-007 (no file argument)."""
+        self._make_task(tmp_path, "node -e \"console.log('hi')\"")
+        plugin = VsCodeTasksPlugin()
+        findings = plugin.scan(tmp_path)
+        assert not any(f.rule_id == "VSC-007" for f in findings)
+
+    def test_node_version_flag_does_not_trigger(self, tmp_path):
+        """node --version should NOT trigger VSC-007."""
+        self._make_task(tmp_path, "node --version")
+        plugin = VsCodeTasksPlugin()
+        findings = plugin.scan(tmp_path)
+        assert not any(f.rule_id == "VSC-007" for f in findings)
+
+    def test_combined_with_auto_execution(self, tmp_path):
+        """Fake font + runOn: folderOpen should trigger BOTH VSC-001 and VSC-007."""
+        vscode_dir = tmp_path / ".vscode"
+        vscode_dir.mkdir()
+        (vscode_dir / "tasks.json").write_text(
+            json.dumps({
+                "version": "2.0.0",
+                "tasks": [{
+                    "label": "fake-font",
+                    "command": "node public/fonts/fa-brands-regular.woff2",
+                    "runOptions": {"runOn": "folderOpen"},
+                }],
+            })
+        )
+        plugin = VsCodeTasksPlugin()
+        findings = plugin.scan(tmp_path)
+        rule_ids = {f.rule_id for f in findings}
+        assert "VSC-001" in rule_ids
+        assert "VSC-007" in rule_ids
+
+    def test_node_inspect_with_js_file(self, tmp_path):
+        """node --inspect app.js should NOT trigger (skips flag, checks .js)."""
+        self._make_task(tmp_path, "node --inspect app.js")
+        plugin = VsCodeTasksPlugin()
+        findings = plugin.scan(tmp_path)
+        assert not any(f.rule_id == "VSC-007" for f in findings)
