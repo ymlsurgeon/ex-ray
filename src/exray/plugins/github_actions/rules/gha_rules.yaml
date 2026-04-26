@@ -74,3 +74,12 @@ rules:
       - "systemctl.*runner"
       - "service.*runner.*start"
     recommendation: "This workflow attempts to install a runner as a persistent system service. This is a known persistence technique. Remove immediately."
+
+  - id: "GHA-008"
+    name: "Unpinned third-party GitHub Action reference"
+    severity: "medium"
+    description: "Workflow uses a third-party GitHub Action pinned to a mutable tag (e.g., @v1) instead of a commit SHA. Mutable tags can be force-pushed to point to malicious code, as demonstrated in the TeamPCP/Trivy supply chain attack (March 2026)."
+    # Checked programmatically in scanner.py — dummy keyword prevents YAML-only matching
+    keywords:
+      - "__programmatic_gha008__"
+    recommendation: "Pin this Action to a full commit SHA instead of a version tag. Example: replace 'uses: owner/action@v1' with 'uses: owner/action@abc123def456...' . You can find the SHA for a release tag using: git ls-remote https://github.com/owner/action refs/tags/v1"

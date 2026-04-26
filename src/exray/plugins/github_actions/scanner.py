@@ -8,14 +8,15 @@ Detects malicious patterns in GitHub Actions workflow files including:
 - Suspicious external actions
 """
 
+import re
 from pathlib import Path
 from typing import Any
 import logging
 import yaml
 
 from exray.core.plugin import BasePlugin
-from exray.core.models import Finding, Rule
-from exray.core.static_analysis import match_rules
+from exray.core.models import Finding, Rule, Severity
+from exray.core.static_analysis import get_context_lines, match_rules
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,9 @@ class GitHubActionsPlugin(BasePlugin):
                 plugin_name="github_actions",
             )
 
+            # Programmatic: detect unpinned third-party action references
+            findings.extend(self._detect_unpinned_actions(content, workflow_file))
+
         except Exception as e:
             logger.error(f"Failed to scan {workflow_file}: {e}")
 
@@ -95,6 +99,9 @@ class GitHubActionsPlugin(BasePlugin):
                 data = yaml.safe_load(f)
 
             for rule_data in data.get("rules", []):
+                # Skip GHA-008 — checked programmatically in _detect_unpinned_actions
+                if rule_data["id"] == "GHA-008":
+                    continue
                 rules.append(Rule(**rule_data))
 
             logger.info(f"Loaded {len(rules)} GitHub Actions rules")
@@ -102,6 +109,48 @@ class GitHubActionsPlugin(BasePlugin):
             logger.error(f"Failed to load rules from {rules_file}: {e}")
 
         return rules
+
+    # Patterns for unpinned action detection (GHA-008)
+    _USES_RE = re.compile(r'^\s*-?\s*uses:\s*(.+)', re.MULTILINE)
+    _SHA_RE = re.compile(r'@[0-9a-f]{40}\b')
+    _FIRST_PARTY_RE = re.compile(r'^(actions|github)/')
+    _LOCAL_RE = re.compile(r'^\./')
+    _DOCKER_RE = re.compile(r'^docker://')
+
+    def _detect_unpinned_actions(self, content: str, workflow_file: Path) -> list[Finding]:
+        """Detect third-party GitHub Action references not pinned to a commit SHA."""
+        findings = []
+        for match in self._USES_RE.finditer(content):
+            ref = match.group(1).strip().strip('"').strip("'")
+            # Strip inline comments
+            if " #" in ref:
+                ref = ref[: ref.index(" #")].strip()
+            # Skip first-party, local, and docker references
+            if self._FIRST_PARTY_RE.match(ref):
+                continue
+            if self._LOCAL_RE.match(ref):
+                continue
+            if self._DOCKER_RE.match(ref):
+                continue
+            # Check if pinned to full SHA
+            if self._SHA_RE.search(ref):
+                continue
+            line_number = content[: match.start()].count("\n") + 1
+            findings.append(
+                Finding(
+                    rule_id="GHA-008",
+                    rule_name="Unpinned third-party GitHub Action reference",
+                    severity=Severity.MEDIUM,
+                    file_path=workflow_file,
+                    line_number=line_number,
+                    matched_content=f"uses: {ref}",
+                    context_lines=get_context_lines(content, line_number),
+                    description=f"Action '{ref}' uses a mutable tag instead of a commit SHA. Mutable tags can be force-pushed to point to malicious code (TeamPCP/Trivy attack, March 2026).",
+                    recommendation="Pin this Action to a full commit SHA instead of a version tag.",
+                    plugin_name="github_actions",
+                )
+            )
+        return findings
 
     def get_metadata(self) -> dict[str, Any]:
         """Return plugin metadata."""

@@ -366,3 +366,88 @@ jobs:
             assert rule.severity
             assert rule.description
             assert rule.recommendation
+
+
+class TestUnpinnedActionDetection:
+    """Tests for GHA-008: unpinned third-party GitHub Action references."""
+
+    @pytest.fixture
+    def plugin(self):
+        return GitHubActionsPlugin()
+
+    def _make_workflow(self, tmp_path, uses_lines):
+        """Helper: create a workflow file with given uses: directives."""
+        workflows_dir = tmp_path / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+        steps = "\n".join(f"      - uses: {u}" for u in uses_lines)
+        workflow = workflows_dir / "ci.yml"
+        workflow.write_text(f"""
+name: CI
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+{steps}
+      - run: echo done
+""")
+        return tmp_path
+
+    def test_unpinned_tag_triggers_gha008(self, plugin, tmp_path):
+        """uses: third-party/action@v1 should trigger GHA-008."""
+        self._make_workflow(tmp_path, ["some-org/some-action@v1"])
+        findings = plugin.scan(tmp_path)
+        gha008 = [f for f in findings if f.rule_id == "GHA-008"]
+        assert len(gha008) == 1
+        assert gha008[0].severity == Severity.MEDIUM
+
+    def test_unpinned_main_branch_triggers(self, plugin, tmp_path):
+        """uses: third-party/action@main should trigger GHA-008."""
+        self._make_workflow(tmp_path, ["some-org/some-action@main"])
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "GHA-008" for f in findings)
+
+    def test_unpinned_latest_triggers(self, plugin, tmp_path):
+        """uses: third-party/action@latest should trigger GHA-008."""
+        self._make_workflow(tmp_path, ["some-org/some-action@latest"])
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "GHA-008" for f in findings)
+
+    def test_sha_pinned_does_not_trigger(self, plugin, tmp_path):
+        """uses: with full 40-char SHA should NOT trigger GHA-008."""
+        self._make_workflow(tmp_path, [
+            "some-org/some-action@a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+        ])
+        findings = plugin.scan(tmp_path)
+        assert not any(f.rule_id == "GHA-008" for f in findings)
+
+    def test_first_party_checkout_excluded(self, plugin, tmp_path):
+        """uses: actions/checkout@v4 should NOT trigger (first-party)."""
+        self._make_workflow(tmp_path, ["actions/checkout@v4"])
+        findings = plugin.scan(tmp_path)
+        assert not any(f.rule_id == "GHA-008" for f in findings)
+
+    def test_first_party_github_excluded(self, plugin, tmp_path):
+        """uses: github/codeql-action/upload-sarif@v3 should NOT trigger."""
+        self._make_workflow(tmp_path, ["github/codeql-action/upload-sarif@v3"])
+        findings = plugin.scan(tmp_path)
+        assert not any(f.rule_id == "GHA-008" for f in findings)
+
+    def test_local_action_excluded(self, plugin, tmp_path):
+        """uses: ./local-action should NOT trigger."""
+        self._make_workflow(tmp_path, ["./local-action"])
+        findings = plugin.scan(tmp_path)
+        assert not any(f.rule_id == "GHA-008" for f in findings)
+
+    def test_mixed_pinned_and_unpinned(self, plugin, tmp_path):
+        """Only unpinned third-party refs should trigger, not pinned ones."""
+        self._make_workflow(tmp_path, [
+            "actions/checkout@v4",
+            "some-org/some-action@v1",
+            "other-org/tool@a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+            "another-org/lib@main",
+        ])
+        findings = plugin.scan(tmp_path)
+        gha008 = [f for f in findings if f.rule_id == "GHA-008"]
+        # Should trigger for some-org/some-action@v1 and another-org/lib@main
+        assert len(gha008) == 2
