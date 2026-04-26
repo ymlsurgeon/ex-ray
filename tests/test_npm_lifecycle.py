@@ -767,3 +767,108 @@ class TestPreinstallEscalation:
         findings = plugin.scan(tmp_path)
         # Should have minimal or zero findings
         assert len(findings) == 0 or all(f.severity.value == "low" for f in findings)
+
+
+class TestDestructiveCommandDetection:
+    """Tests for NPM-020 (destructive commands) and NPM-021 (homedir targeting)."""
+
+    def test_rm_rf_home_triggers_npm020(self, tmp_path):
+        """rm -rf ~/ in lifecycle script triggers NPM-020 CRITICAL."""
+        plugin = NpmLifecyclePlugin()
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "malicious-pkg",
+            "scripts": {"postinstall": "rm -rf ~/"}
+        }))
+        findings = plugin.scan(tmp_path)
+        npm020 = [f for f in findings if f.rule_id == "NPM-020"]
+        assert len(npm020) > 0
+        assert npm020[0].severity.value == "critical"
+
+    def test_rm_rf_home_var_triggers_npm020(self, tmp_path):
+        """rm -rf $HOME/.config triggers NPM-020."""
+        plugin = NpmLifecyclePlugin()
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "malicious-pkg",
+            "scripts": {"postinstall": "rm -rf $HOME/.config"}
+        }))
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-020" for f in findings)
+
+    def test_shred_triggers_npm020(self, tmp_path):
+        """shred command triggers NPM-020."""
+        plugin = NpmLifecyclePlugin()
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "malicious-pkg",
+            "scripts": {"preinstall": "shred -u /tmp/secrets.json"}
+        }))
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-020" for f in findings)
+
+    def test_find_delete_triggers_npm020(self, tmp_path):
+        """find with -delete triggers NPM-020."""
+        plugin = NpmLifecyclePlugin()
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "malicious-pkg",
+            "scripts": {"postinstall": 'find / -name "*.key" -delete'}
+        }))
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-020" for f in findings)
+
+    def test_rm_rf_root_triggers_npm020(self, tmp_path):
+        """rm -rf / triggers NPM-020."""
+        plugin = NpmLifecyclePlugin()
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "malicious-pkg",
+            "scripts": {"postinstall": "rm -rf /"}
+        }))
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-020" for f in findings)
+
+    def test_js_rmsync_homedir_triggers_npm021(self, tmp_path):
+        """fs.rmSync(os.homedir()) triggers NPM-021."""
+        plugin = NpmLifecyclePlugin()
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "malicious-pkg",
+            "scripts": {"postinstall": "node -e \"fs.rmSync(os.homedir(), {recursive: true})\""}
+        }))
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-021" for f in findings)
+
+    def test_rm_rf_node_modules_does_not_trigger(self, tmp_path):
+        """rm -rf node_modules should NOT trigger NPM-020 (safe cleanup)."""
+        plugin = NpmLifecyclePlugin()
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "clean-pkg",
+            "scripts": {"preinstall": "rm -rf node_modules"}
+        }))
+        findings = plugin.scan(tmp_path)
+        assert not any(f.rule_id == "NPM-020" for f in findings)
+
+    def test_rm_rf_local_dir_does_not_trigger(self, tmp_path):
+        """rm -rf ./dist should NOT trigger NPM-020."""
+        plugin = NpmLifecyclePlugin()
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "clean-pkg",
+            "scripts": {"preinstall": "rm -rf ./dist"}
+        }))
+        findings = plugin.scan(tmp_path)
+        assert not any(f.rule_id == "NPM-020" for f in findings)
+
+    def test_preinstall_destructive_gets_escalation(self, tmp_path):
+        """Destructive command in preinstall triggers NPM-020 AND existing escalation."""
+        plugin = NpmLifecyclePlugin()
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "malicious-pkg",
+            "scripts": {"preinstall": "rm -rf ~/"}
+        }))
+        findings = plugin.scan(tmp_path)
+        assert any(f.rule_id == "NPM-020" for f in findings)
