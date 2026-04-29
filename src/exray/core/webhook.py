@@ -73,6 +73,9 @@ def post_findings_ndjson(
     url: str,
     sarif_data: dict,
     tenant_id: str | None = None,
+    repo: str | None = None,
+    actor: str | None = None,
+    pr_author: str | None = None,
     timeout: int = 30,
 ) -> bool:
     """
@@ -86,6 +89,7 @@ def post_findings_ndjson(
         url: Full webhook URL
         sarif_data: SARIF dict to flatten and send
         tenant_id: Optional tenant identifier
+        repo: Optional repository identifier (e.g., "owner/repo")
         timeout: Request timeout in seconds (default 30)
 
     Returns:
@@ -121,6 +125,9 @@ def post_findings_ndjson(
         "source": "ex-ray",
         "version": run.get("tool", {}).get("driver", {}).get("version", "unknown"),
         "tenant_id": tenant_id or props.get("tenantId"),
+        "repo": repo,
+        "actor": actor,
+        "pr_author": pr_author,
         "scan_timestamp": props.get("scanTimestamp", ""),
     }
 

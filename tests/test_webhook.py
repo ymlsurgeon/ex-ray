@@ -326,7 +326,8 @@ class TestPostFindingsNdjson:
         """First line contains all expected top-level keys."""
         _, lines, _ = _capture_ndjson_post(SARIF_WITH_FINDINGS, tenant_id="acme-corp")
         expected_keys = {
-            "source", "version", "tenant_id", "scan_timestamp",
+            "source", "version", "tenant_id", "repo", "actor", "pr_author",
+            "scan_timestamp",
             "rule_id", "rule_name", "severity", "sarif_level",
             "package_name", "package_version",
             "file_path", "line_number", "matched_content", "message",
@@ -393,6 +394,57 @@ class TestPostFindingsNdjson:
         """Number of NDJSON lines equals number of SARIF results."""
         _, lines, _ = _capture_ndjson_post(SARIF_WITH_FINDINGS)
         assert len(lines) == len(SARIF_WITH_FINDINGS["runs"][0]["results"])
+
+    def test_repo_field_included_when_set(self):
+        """repo field is present on every NDJSON line when provided."""
+        captured = {}
+
+        def fake_urlopen(request, timeout):
+            captured["body"] = request.data
+            mock_response = MagicMock()
+            mock_response.status = 200
+            mock_response.__enter__ = lambda s: s
+            mock_response.__exit__ = MagicMock(return_value=False)
+            return mock_response
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            post_findings_ndjson("https://example.com/webhook", SARIF_WITH_FINDINGS, repo="acme/supply-chain-demo")
+
+        lines = [json.loads(l) for l in captured["body"].decode("utf-8").strip().split("\n")]
+        assert all(l["repo"] == "acme/supply-chain-demo" for l in lines)
+
+    def test_repo_field_null_when_not_set(self):
+        """repo field is null (not missing) when not provided."""
+        _, lines, _ = _capture_ndjson_post(SARIF_WITH_FINDINGS)
+        assert all(l["repo"] is None for l in lines)
+
+    def test_actor_and_pr_author_included(self):
+        """actor and pr_author fields are present on every line when provided."""
+        captured = {}
+
+        def fake_urlopen(request, timeout):
+            captured["body"] = request.data
+            mock_response = MagicMock()
+            mock_response.status = 200
+            mock_response.__enter__ = lambda s: s
+            mock_response.__exit__ = MagicMock(return_value=False)
+            return mock_response
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            post_findings_ndjson(
+                "https://example.com/webhook", SARIF_WITH_FINDINGS,
+                actor="merge-user", pr_author="dev-user",
+            )
+
+        lines = [json.loads(l) for l in captured["body"].decode("utf-8").strip().split("\n")]
+        assert all(l["actor"] == "merge-user" for l in lines)
+        assert all(l["pr_author"] == "dev-user" for l in lines)
+
+    def test_actor_and_pr_author_null_when_not_set(self):
+        """actor and pr_author are null (not missing) when not provided."""
+        _, lines, _ = _capture_ndjson_post(SARIF_WITH_FINDINGS)
+        assert all(l["actor"] is None for l in lines)
+        assert all(l["pr_author"] is None for l in lines)
 
     def test_low_severity_resolution(self):
         """security-severity 2.0 maps to 'low'."""

@@ -75,6 +75,21 @@ def _filter_by_severity(result: ScanResult, min_severity: str) -> ScanResult:
     help="Tenant identifier injected into SARIF properties and webhook headers.",
 )
 @click.option(
+    "--repo",
+    default=None,
+    help="Repository identifier (e.g., 'owner/repo') included in webhook findings for SIEM filtering.",
+)
+@click.option(
+    "--actor",
+    default=None,
+    help="User who triggered the scan (e.g., the merger). Maps to GITHUB_ACTOR in Actions.",
+)
+@click.option(
+    "--pr-author",
+    default=None,
+    help="User who created the pull request or commit. Maps to github.event.pull_request.user.login in Actions.",
+)
+@click.option(
     "--severity",
     "-s",
     type=click.Choice(["low", "medium", "high", "critical"], case_sensitive=False),
@@ -87,7 +102,7 @@ def _filter_by_severity(result: ScanResult, min_severity: str) -> ScanResult:
 @click.option(
     "--list-plugins", is_flag=True, help="List available plugins and exit"
 )
-def main(target, plugin, format, output, webhook_url, webhook_format, tenant_id, severity, verbose, list_plugins):
+def main(target, plugin, format, output, webhook_url, webhook_format, tenant_id, repo, actor, pr_author, severity, verbose, list_plugins):
     """
     Ex-Ray - Detect malicious patterns in developer tooling.
 
@@ -151,7 +166,7 @@ def main(target, plugin, format, output, webhook_url, webhook_format, tenant_id,
             import json as _json
             sarif_dict = _json.loads(report_output)
             if webhook_format == "ndjson":
-                post_findings_ndjson(url=webhook_url, sarif_data=sarif_dict, tenant_id=tenant_id)
+                post_findings_ndjson(url=webhook_url, sarif_data=sarif_dict, tenant_id=tenant_id, repo=repo, actor=actor, pr_author=pr_author)
             else:
                 post_sarif(url=webhook_url, sarif_data=sarif_dict, tenant_id=tenant_id)
 
