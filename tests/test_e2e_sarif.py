@@ -415,3 +415,20 @@ class TestMultiVectorSarif:
             artifact = result["locations"][0]["physicalLocation"]["artifactLocation"]
             assert artifact.get("uriBaseId") == "%SRCROOT%"
             assert not artifact["uri"].startswith("/")
+
+    def test_npm_findings_include_package_metadata_in_sarif(self, tmp_path):
+        """SARIF results from npm findings should include package metadata in properties."""
+        (tmp_path / "package.json").write_text(json.dumps({
+            "name": "suspect-pkg",
+            "version": "3.2.1",
+            "scripts": {"postinstall": "eval('payload')"},
+        }))
+
+        data = _run_scan(tmp_path)
+        results = data["runs"][0]["results"]
+        npm_results = [r for r in results if r["ruleId"].startswith("NPM")]
+        assert len(npm_results) > 0
+        for r in npm_results:
+            assert "properties" in r, f"Missing properties on {r['ruleId']}"
+            assert r["properties"]["package_name"] == "suspect-pkg"
+            assert r["properties"]["package_version"] == "3.2.1"

@@ -58,6 +58,9 @@ class Finding(BaseModel):
     description: str = Field(..., description="What was detected and why it matters")
     recommendation: str = Field(..., description="Remediation advice")
     plugin_name: str = Field(..., description="Plugin that produced this finding")
+    metadata: Optional[dict[str, str]] = Field(
+        None, description="Structured metadata (e.g., package name/version)"
+    )
 
     @field_serializer("file_path")
     def serialize_path(self, path: Path) -> str:

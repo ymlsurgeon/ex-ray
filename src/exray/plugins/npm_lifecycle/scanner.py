@@ -265,6 +265,11 @@ class NpmLifecyclePlugin(BasePlugin):
             logger.warning(f"Could not read {pkg_path}: {e}")
             return []
 
+        # Extract package identity for finding metadata
+        pkg_name = data.get("name", "unknown")
+        pkg_version = data.get("version", "unknown")
+        pkg_meta = {"package_name": pkg_name, "package_version": pkg_version}
+
         # Extract scripts section
         scripts = data.get("scripts", {})
         if not scripts or not isinstance(scripts, dict):
@@ -428,6 +433,12 @@ class NpmLifecyclePlugin(BasePlugin):
                     plugin_name=self.get_metadata()["name"],
                 )
             )
+
+        # Stamp package identity onto every finding from this package.json
+        pkg_label = f"[package: {pkg_name}@{pkg_version}]"
+        for finding in findings:
+            finding.metadata = pkg_meta
+            finding.description = f"{pkg_label} {finding.description}"
 
         return findings
 

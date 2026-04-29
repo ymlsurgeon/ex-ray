@@ -872,3 +872,66 @@ class TestDestructiveCommandDetection:
         }))
         findings = plugin.scan(tmp_path)
         assert any(f.rule_id == "NPM-020" for f in findings)
+
+
+class TestPackageMetadata:
+    """Tests for package name/version metadata in npm findings."""
+
+    def test_findings_include_package_name_and_version(self, tmp_path):
+        """Every finding should carry the package name and version."""
+        plugin = NpmLifecyclePlugin()
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "evil-pkg",
+            "version": "6.6.6",
+            "scripts": {"postinstall": "eval('payload')"}
+        }))
+        findings = plugin.scan(tmp_path)
+        assert len(findings) > 0
+        for f in findings:
+            assert f.metadata is not None
+            assert f.metadata["package_name"] == "evil-pkg"
+            assert f.metadata["package_version"] == "6.6.6"
+
+    def test_description_includes_package_label(self, tmp_path):
+        """Finding descriptions should be prefixed with package identity."""
+        plugin = NpmLifecyclePlugin()
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "shady-lib",
+            "version": "0.0.1",
+            "scripts": {"postinstall": "eval('payload')"}
+        }))
+        findings = plugin.scan(tmp_path)
+        assert len(findings) > 0
+        assert all("[package: shady-lib@0.0.1]" in f.description for f in findings)
+
+    def test_missing_name_and_version_defaults(self, tmp_path):
+        """Packages without name/version should default to 'unknown'."""
+        plugin = NpmLifecyclePlugin()
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "scripts": {"postinstall": "eval('payload')"}
+        }))
+        findings = plugin.scan(tmp_path)
+        assert len(findings) > 0
+        assert findings[0].metadata["package_name"] == "unknown"
+        assert findings[0].metadata["package_version"] == "unknown"
+
+    def test_js_file_findings_include_metadata(self, tmp_path):
+        """Findings from referenced JS files should also carry package metadata."""
+        plugin = NpmLifecyclePlugin()
+        pkg = tmp_path / "package.json"
+        pkg.write_text(json.dumps({
+            "name": "bad-pkg",
+            "version": "2.0.0",
+            "scripts": {"postinstall": "node setup.js"}
+        }))
+        setup = tmp_path / "setup.js"
+        setup.write_text("eval('malicious')")
+        findings = plugin.scan(tmp_path)
+        js_findings = [f for f in findings if "setup.js" in str(f.file_path)]
+        assert len(js_findings) > 0
+        for f in js_findings:
+            assert f.metadata is not None
+            assert f.metadata["package_name"] == "bad-pkg"

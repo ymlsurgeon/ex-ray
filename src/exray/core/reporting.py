@@ -265,9 +265,12 @@ class SarifReporter:
                 "snippet": {"text": "\n".join(finding.context_lines)},
             }
 
-        return {
+        result = {
             "ruleId": finding.rule_id,
             "level": self._severity_to_sarif_level(finding.severity),
             "message": {"text": message},
             "locations": [{"physicalLocation": phys_loc}],
         }
+        if finding.metadata:
+            result["properties"] = finding.metadata
+        return result
