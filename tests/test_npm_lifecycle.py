@@ -935,3 +935,50 @@ class TestPackageMetadata:
         for f in js_findings:
             assert f.metadata is not None
             assert f.metadata["package_name"] == "bad-pkg"
+
+    def test_monorepo_metadata_maps_to_correct_package(self, tmp_path):
+        """In a monorepo, each finding should carry the metadata of its own package."""
+        plugin = NpmLifecyclePlugin()
+
+        # Root package (no scripts)
+        (tmp_path / "package.json").write_text(json.dumps({
+            "name": "my-monorepo",
+            "version": "1.0.0",
+            "workspaces": ["packages/*"],
+        }))
+
+        # Package A — malicious
+        pkg_a = tmp_path / "packages" / "pkg-a"
+        pkg_a.mkdir(parents=True)
+        (pkg_a / "package.json").write_text(json.dumps({
+            "name": "@acme/pkg-a",
+            "version": "3.0.0",
+            "scripts": {"postinstall": "eval('payload-a')"},
+        }))
+
+        # Package B — also malicious, different name/version
+        pkg_b = tmp_path / "packages" / "pkg-b"
+        pkg_b.mkdir(parents=True)
+        (pkg_b / "package.json").write_text(json.dumps({
+            "name": "@acme/pkg-b",
+            "version": "7.7.7",
+            "scripts": {"postinstall": "eval('payload-b')"},
+        }))
+
+        findings = plugin.scan(tmp_path)
+
+        # Findings from pkg-a should have pkg-a metadata
+        a_findings = [f for f in findings if f.metadata and f.metadata["package_name"] == "@acme/pkg-a"]
+        assert len(a_findings) > 0
+        assert all(f.metadata["package_version"] == "3.0.0" for f in a_findings)
+        assert all("[package: @acme/pkg-a@3.0.0]" in f.description for f in a_findings)
+
+        # Findings from pkg-b should have pkg-b metadata
+        b_findings = [f for f in findings if f.metadata and f.metadata["package_name"] == "@acme/pkg-b"]
+        assert len(b_findings) > 0
+        assert all(f.metadata["package_version"] == "7.7.7" for f in b_findings)
+        assert all("[package: @acme/pkg-b@7.7.7]" in f.description for f in b_findings)
+
+        # No cross-contamination
+        assert not any(f.metadata["package_name"] == "@acme/pkg-b" for f in a_findings)
+        assert not any(f.metadata["package_name"] == "@acme/pkg-a" for f in b_findings)

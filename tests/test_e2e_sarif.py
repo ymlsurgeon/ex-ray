@@ -252,7 +252,7 @@ class TestTenantEndToEnd:
             return True
 
         runner = CliRunner()
-        with patch("exray.cli.post_sarif", side_effect=fake_post):
+        with patch("exray.cli.post_findings_ndjson", side_effect=fake_post):
             result = runner.invoke(
                 main,
                 [
@@ -278,7 +278,7 @@ class TestTenantEndToEnd:
             return True
 
         runner = CliRunner()
-        with patch("exray.cli.post_sarif", side_effect=fake_post):
+        with patch("exray.cli.post_findings_ndjson", side_effect=fake_post):
             runner.invoke(
                 main,
                 [
@@ -305,7 +305,7 @@ class TestTenantEndToEnd:
             return True
 
         runner = CliRunner()
-        with patch("exray.cli.post_sarif", side_effect=fake_post):
+        with patch("exray.cli.post_findings_ndjson", side_effect=fake_post):
             result = runner.invoke(
                 main,
                 [
@@ -334,7 +334,7 @@ class TestTenantEndToEnd:
         outfile = tmp_path / "results.sarif"
 
         runner = CliRunner()
-        with patch("exray.cli.post_sarif", return_value=False):
+        with patch("exray.cli.post_findings_ndjson", return_value=False):
             result = runner.invoke(
                 main,
                 [

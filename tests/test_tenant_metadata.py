@@ -122,7 +122,7 @@ class TestCLITenantAndWebhook:
         """--webhook-url triggers post_sarif() when format is sarif."""
         runner = CliRunner()
 
-        with patch("exray.cli.post_sarif", return_value=True) as mock_post:
+        with patch("exray.cli.post_findings_ndjson", return_value=True) as mock_post:
             result = runner.invoke(
                 main,
                 [
@@ -141,7 +141,7 @@ class TestCLITenantAndWebhook:
         """--tenant-id is forwarded to post_sarif()."""
         runner = CliRunner()
 
-        with patch("exray.cli.post_sarif", return_value=True) as mock_post:
+        with patch("exray.cli.post_findings_ndjson", return_value=True) as mock_post:
             result = runner.invoke(
                 main,
                 [
@@ -160,7 +160,7 @@ class TestCLITenantAndWebhook:
         """Webhook failure does not prevent SARIF from being written to stdout."""
         runner = CliRunner()
 
-        with patch("exray.cli.post_sarif", return_value=False):
+        with patch("exray.cli.post_findings_ndjson", return_value=False):
             result = runner.invoke(
                 main,
                 [
@@ -179,7 +179,7 @@ class TestCLITenantAndWebhook:
         """Webhook is not triggered when --format is json (sarif only)."""
         runner = CliRunner()
 
-        with patch("exray.cli.post_sarif", return_value=True) as mock_post:
+        with patch("exray.cli.post_findings_ndjson", return_value=True) as mock_post:
             result = runner.invoke(
                 main,
                 [
@@ -229,7 +229,7 @@ class TestCLITenantAndWebhook:
         outfile = tmp_path / "results.sarif"
         runner = CliRunner()
 
-        with patch("exray.cli.post_sarif", return_value=True) as mock_post:
+        with patch("exray.cli.post_findings_ndjson", return_value=True) as mock_post:
             result = runner.invoke(
                 main,
                 [

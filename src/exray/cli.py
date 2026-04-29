@@ -8,7 +8,7 @@ import click
 from .core.models import ScanResult
 from .core.orchestrator import Orchestrator
 from .core.reporting import JsonReporter, SarifReporter, TextReporter
-from .core.webhook import post_sarif
+from .core.webhook import post_findings_ndjson, post_sarif
 
 _SEVERITY_RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 
@@ -64,6 +64,12 @@ def _filter_by_severity(result: ScanResult, min_severity: str) -> ScanResult:
     help="POST SARIF results to this URL after scanning.",
 )
 @click.option(
+    "--webhook-format",
+    type=click.Choice(["sarif", "ndjson"], case_sensitive=False),
+    default="ndjson",
+    help="Webhook payload format. 'ndjson' sends one line per finding (default). 'sarif' sends the full SARIF blob.",
+)
+@click.option(
     "--tenant-id",
     default=None,
     help="Tenant identifier injected into SARIF properties and webhook headers.",
@@ -81,7 +87,7 @@ def _filter_by_severity(result: ScanResult, min_severity: str) -> ScanResult:
 @click.option(
     "--list-plugins", is_flag=True, help="List available plugins and exit"
 )
-def main(target, plugin, format, output, webhook_url, tenant_id, severity, verbose, list_plugins):
+def main(target, plugin, format, output, webhook_url, webhook_format, tenant_id, severity, verbose, list_plugins):
     """
     Ex-Ray - Detect malicious patterns in developer tooling.
 
@@ -143,11 +149,14 @@ def main(target, plugin, format, output, webhook_url, tenant_id, severity, verbo
         # Webhook delivery (fire-and-forget, after normal output)
         if webhook_url:
             import json as _json
-            post_sarif(
-                url=webhook_url,
-                sarif_data=_json.loads(report_output),
-                tenant_id=tenant_id,
-            )
+            sarif_dict = _json.loads(report_output)
+            if webhook_format == "ndjson":
+                post_findings_ndjson(url=webhook_url, sarif_data=sarif_dict, tenant_id=tenant_id)
+            else:
+                post_sarif(url=webhook_url, sarif_data=sarif_dict, tenant_id=tenant_id)
+
+    if webhook_url and format != "sarif":
+        click.echo("Warning: --webhook-url requires --format sarif. Webhook will not fire.", err=True)
 
     # Exit code based on findings
     if result.summary["critical"] > 0 or result.summary["high"] > 0:
